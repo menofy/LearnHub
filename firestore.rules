@@ -1,0 +1,140 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function userDoc(userId) {
+      return get(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function hasRole(role) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc(request.auth.uid).data.role == role;
+    }
+
+    function isInstructor() {
+      return hasRole('instructor');
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && (
+          request.auth.token.admin == true
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && userDoc(request.auth.uid).data.role == 'admin'
+          )
+        );
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if isSelf(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.email is string
+        && request.resource.data.name is string
+        && request.resource.data.role in ['student', 'instructor', 'admin'];
+      allow update: if isSelf(userId)
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly([
+            'name',
+            'phone',
+            'image',
+            'createdAt',
+            'createdAtMs',
+            'fcmToken',
+            'fcmTokenUpdatedAt'
+          ])
+        || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /instructors/{instructorId} {
+      allow read: if true;
+      allow create, update: if isSelf(instructorId) && isInstructor() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /courses/{courseId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && (isAdmin() || (isInstructor()
+          && request.resource.data.instructorId == request.auth.uid
+          && request.resource.data.isAdminCourse != true));
+      allow update, delete: if signedIn()
+        && (isAdmin() || (isInstructor() && resource.data.instructorId == request.auth.uid));
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read: if signedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create, update: if signedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow delete: if signedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /learning_states/{userId} {
+      allow read, write: if isSelf(userId) || isAdmin();
+    }
+
+    match /course_reviews/{reviewId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.courseId is string
+        && request.resource.data.userName is string
+        && request.resource.data.comment is string
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5;
+      allow update, delete: if isAdmin();
+    }
+
+    match /followers/{followId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.instructorId is string;
+      allow delete: if signedIn()
+        && (resource.data.followerId == request.auth.uid || resource.data.instructorId == request.auth.uid || isAdmin());
+      allow update: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && (isInstructor() || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    match /fcm_tokens/{tokenId} {
+      allow read: if signedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create, update: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    match /password_reset_otps/{email} {
+      allow create, read, update: if true;
+      allow delete: if isAdmin();
+    }
+
+    match /mail/{mailId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
