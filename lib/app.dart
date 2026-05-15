@@ -7,7 +7,7 @@ import 'core/navigation/app_navigator.dart';
 import 'core/navigation/app_router.dart';
 import 'core/navigation/app_routes.dart';
 import 'core/theme/app_theme.dart';
-import 'presentation/providers/app_state_provider.dart';
+import 'features/shared/providers/app_state_provider.dart';
 
 class LearnHubApp extends StatelessWidget {
   const LearnHubApp({super.key});

@@ -11,7 +11,7 @@ import 'package:learnhub/features/student_side/home/widgets/home_learning_focus_
 import 'package:learnhub/features/student_side/home/widgets/home_new_instructors_section.dart';
 import 'package:learnhub/features/student_side/home/widgets/home_promo_carousel.dart';
 import 'package:learnhub/features/student_side/home/widgets/home_top_mentors_strip.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
 import 'package:learnhub/features/course/providers/course_provider.dart';
 import 'package:provider/provider.dart';
@@ -338,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
           : '${courseProvider.primaryCategoryForInstructor(appUser.name)} Instructor',
       bio: 'New instructor on LearnHub',
       avatarUrl: appUser.photoUrl,
-      rating: 4.8,
+      rating: courseProvider.ratingForInstructor(appUser.name),
       studentCount: 0,
     );
   }

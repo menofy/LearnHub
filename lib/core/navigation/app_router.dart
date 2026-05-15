@@ -87,19 +87,28 @@ class AppRouter {
         );
       case AppRoutes.createNewPassword:
         final args = settings.arguments;
-        final oobCode = args is String ? args : '';
+        final passwordArgs = args is CreateNewPasswordArgs
+            ? args
+            : args is String
+            ? CreateNewPasswordArgs(oobCode: args)
+            : const CreateNewPasswordArgs();
         return MaterialPageRoute<void>(
-          builder: (_) => CreateNewPasswordScreen(oobCode: oobCode),
+          builder: (_) => CreateNewPasswordScreen(args: passwordArgs),
         );
       case AppRoutes.otpVerification:
         final args = settings.arguments;
-        final oobCode = args is String ? args : '';
+        if (args is! PasswordResetOtpArgs) {
+          return _errorRoute('Invalid password reset OTP arguments');
+        }
         return MaterialPageRoute<void>(
-          builder: (_) => OtpVerificationScreen(oobCode: oobCode),
+          builder: (_) => OtpVerificationScreen(email: args.email),
         );
       case AppRoutes.resetPasswordSuccess:
+        final args = settings.arguments;
         return MaterialPageRoute<void>(
-          builder: (_) => const ResetPasswordSuccessScreen(),
+          builder: (_) => ResetPasswordSuccessScreen(
+            args: args is ResetPasswordSuccessArgs ? args : null,
+          ),
         );
       case AppRoutes.forgotPassword:
         return MaterialPageRoute<void>(

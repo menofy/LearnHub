@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:learnhub/domain/entities/course.dart';
 import 'package:learnhub/domain/entities/notification_preferences.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

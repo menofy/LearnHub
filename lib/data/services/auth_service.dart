@@ -165,12 +165,68 @@ class AuthService {
     required String newPassword,
   }) async {
     try {
-      // في الواقع، نحتاج إلى استخدام updatePassword للمستخدم الحالي
-      // لكن هنا المستخدم قد لا يكون مسجل دخول
-      // سنستخدم Admin SDK أو Firebase Cloud Functions في الإنتاج
-      // للآن، نترك هذا للـ repository
-      throw UnimplementedError(
-        'Use AuthRepository.resetPasswordWithOtp with proper backend implementation',
+      final user = _auth.currentUser;
+      final normalizedEmail = email.trim().toLowerCase();
+      final currentEmail = user?.email?.trim().toLowerCase() ?? '';
+
+      if (user == null ||
+          currentEmail.isEmpty ||
+          currentEmail != normalizedEmail) {
+        throw FirebaseAuthException(
+          code: 'requires-backend',
+          message:
+              'Direct OTP password reset for signed-out users requires a secure backend function.',
+        );
+      }
+
+      await user
+          .updatePassword(newPassword)
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      if (e is FirebaseAuthException) {
+        rethrow;
+      }
+      if (e is TimeoutException) {
+        throw FirebaseAuthException(
+          code: 'auth-timeout',
+          message: 'Password reset timed out. Please try again.',
+        );
+      }
+      throw FirebaseAuthException(code: 'unknown', message: e.toString());
+    }
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      final email = user?.email?.trim();
+      if (user == null || email == null || email.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'user-not-found',
+          message: 'No active user session was found.',
+        );
+      }
+
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: currentPassword,
+      );
+
+      await user
+          .reauthenticateWithCredential(credential)
+          .timeout(const Duration(seconds: 8));
+      await user
+          .updatePassword(newPassword)
+          .timeout(const Duration(seconds: 8));
+    } on FirebaseAuthException {
+      rethrow;
+    } on TimeoutException {
+      throw FirebaseAuthException(
+        code: 'auth-timeout',
+        message: 'Password change timed out. Please try again.',
       );
     } catch (e) {
       throw FirebaseAuthException(code: 'unknown', message: e.toString());

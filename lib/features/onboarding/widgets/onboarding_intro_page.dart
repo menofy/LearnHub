@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
-
 class OnboardingIntroPage extends StatelessWidget {
   const OnboardingIntroPage({
     super.key,
@@ -14,6 +12,9 @@ class OnboardingIntroPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
@@ -23,10 +24,10 @@ class OnboardingIntroPage extends StatelessWidget {
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w900,
-              color: Color(AppColors.dark),
+              color: colorScheme.onSurface,
               height: 1.2,
             ),
           ),
@@ -34,10 +35,10 @@ class OnboardingIntroPage extends StatelessWidget {
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Color(AppColors.muted),
+              color: colorScheme.onSurface.withValues(alpha: 0.65),
               height: 1.4,
             ),
           ),

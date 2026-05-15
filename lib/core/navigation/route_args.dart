@@ -17,6 +17,28 @@ class SignupOtpArgs {
   final String email;
 }
 
+class PasswordResetOtpArgs {
+  const PasswordResetOtpArgs({required this.email});
+
+  final String email;
+}
+
+class CreateNewPasswordArgs {
+  const CreateNewPasswordArgs({this.oobCode = '', this.email = ''});
+
+  final String oobCode;
+  final String email;
+
+  bool get usesOtpFlow => email.trim().isNotEmpty;
+}
+
+class ResetPasswordSuccessArgs {
+  const ResetPasswordSuccessArgs({required this.title, required this.message});
+
+  final String title;
+  final String message;
+}
+
 class CategoryCoursesArgs {
   const CategoryCoursesArgs({required this.category});
 

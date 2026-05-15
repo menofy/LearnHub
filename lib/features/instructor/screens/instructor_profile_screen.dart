@@ -9,7 +9,7 @@ import 'package:learnhub/features/instructor/widgets/profile_action_row.dart';
 import 'package:learnhub/features/instructor/widgets/profile_hero_card.dart';
 import 'package:learnhub/features/profile/widgets/followers_list_bottom_sheet.dart';
 import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:provider/provider.dart';
 
 import 'package:learnhub/core/navigation/app_routes.dart';

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
-
 class OnboardingSkipButton extends StatelessWidget {
   const OnboardingSkipButton({super.key, required this.onTap});
 
@@ -9,12 +7,14 @@ class OnboardingSkipButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return TextButton(
       onPressed: onTap,
-      child: const Text(
+      child: Text(
         'Skip',
         style: TextStyle(
-          color: Color(AppColors.dark),
+          color: colorScheme.onSurface,
           fontWeight: FontWeight.w800,
           fontSize: 14,
         ),

@@ -6,7 +6,7 @@ import 'package:learnhub/features/onboarding/onboarding_screen.dart';
 import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
 import 'package:learnhub/features/instructor/screens/instructor_shell_screen.dart';
 import 'package:learnhub/features/shared/auth/screens/login_screen.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

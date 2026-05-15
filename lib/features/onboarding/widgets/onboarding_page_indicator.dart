@@ -14,6 +14,8 @@ class OnboardingPageIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Row(
       children: List.generate(pageCount, (index) {
         final isSelected = index == currentPage;
@@ -25,7 +27,7 @@ class OnboardingPageIndicator extends StatelessWidget {
           decoration: BoxDecoration(
             color: isSelected
                 ? const Color(AppColors.primary)
-                : const Color(0xFFD4E2F3),
+                : colorScheme.onSurface.withValues(alpha: 0.25),
             borderRadius: BorderRadius.circular(3),
           ),
         );

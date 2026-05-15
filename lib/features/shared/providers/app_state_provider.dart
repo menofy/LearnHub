@@ -3,16 +3,15 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:learnhub/core/navigation/app_navigator.dart';
+import 'package:learnhub/data/services/fcm_service.dart';
+import 'package:learnhub/data/services/firestore_service.dart';
+import 'package:learnhub/domain/entities/app_notification.dart';
+import 'package:learnhub/domain/entities/app_user.dart';
+import 'package:learnhub/domain/entities/certificate.dart';
+import 'package:learnhub/domain/entities/course.dart';
+import 'package:learnhub/domain/entities/notification_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-import '../../core/navigation/app_navigator.dart';
-import '../../data/services/fcm_service.dart';
-import '../../data/services/firestore_service.dart';
-import '../../domain/entities/app_notification.dart';
-import '../../domain/entities/app_user.dart';
-import '../../domain/entities/certificate.dart';
-import '../../domain/entities/course.dart';
-import '../../domain/entities/notification_preferences.dart';
 
 class AppStateProvider extends ChangeNotifier {
   AppStateProvider() {

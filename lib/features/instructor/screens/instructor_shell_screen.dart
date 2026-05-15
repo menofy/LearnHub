@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:provider/provider.dart';
 
 import 'package:learnhub/core/theme/app_colors.dart';

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:learnhub/core/navigation/app_routes.dart';
 import 'package:learnhub/core/shared_widgets/edu_primary_button.dart';
@@ -22,8 +24,19 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _remember = false;
+  bool _rememberInitialized = false;
   bool _isPasswordHidden = true;
   AutovalidateMode _autovalidateMode = AutovalidateMode.disabled;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_rememberInitialized) {
+      return;
+    }
+    _remember = context.read<AuthProvider>().rememberMeEnabled;
+    _rememberInitialized = true;
+  }
 
   @override
   void dispose() {
@@ -62,6 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final success = await auth.login(
       email: _emailController.text.trim(),
       password: _passwordController.text,
+      rememberMe: _remember,
     );
 
     if (!mounted) return;
@@ -83,14 +97,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
-    var success = await auth.loginWithGoogle();
+    var success = await auth.loginWithGoogle(rememberMe: _remember);
 
     if (!mounted) return;
 
     if (!success && auth.requiresRoleSelection) {
       final role = await _showRolePicker();
       if (!mounted || role == null) return;
-      success = await auth.loginWithGoogle(roleForNewUser: role);
+      success = await auth.loginWithGoogle(
+        roleForNewUser: role,
+        rememberMe: _remember,
+      );
     }
 
     if (!mounted) return;
@@ -165,6 +182,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     setState(() {
                       _remember = value;
                     });
+                    unawaited(
+                      context.read<AuthProvider>().setRememberMeEnabled(value),
+                    );
                   },
                 ),
                 const SizedBox(height: 12),

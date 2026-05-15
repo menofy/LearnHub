@@ -326,7 +326,9 @@ class FirestoreService {
       wishlistCourseIds: _stringSetFromValue(data['wishlistCourseIds']),
       downloadedLessonIds: _stringSetFromValue(data['downloadedLessonIds']),
       progressByCourse: _doubleMapFromValue(data['progressByCourse']),
-      watchedPercentByCourse: _doubleMapFromValue(data['watchedPercentByCourse']),
+      watchedPercentByCourse: _doubleMapFromValue(
+        data['watchedPercentByCourse'],
+      ),
       completedLessonsByCourse: _stringListMapFromValue(
         data['completedLessonsByCourse'],
       ),
@@ -360,8 +362,8 @@ class FirestoreService {
           'completedLessonsByCourse': state.completedLessonsByCourse.map(
             (key, value) => MapEntry(key, value.toList()..sort()),
           ),
-          'completedLessonIndexesByCourse':
-              state.completedLessonIndexesByCourse.map(
+          'completedLessonIndexesByCourse': state.completedLessonIndexesByCourse
+              .map(
                 (key, value) =>
                     MapEntry(key, value.toList(growable: false)..sort()),
               ),
@@ -1177,30 +1179,27 @@ class FirestoreService {
     final otp = _generateOtp();
     final timestamp = DateTime.now();
     final expiresAt = timestamp.add(const Duration(minutes: 10));
+    final normalizedEmail = email.trim().toLowerCase();
 
     try {
-      // Save OTP to Firestore
       await _firestore
           .collection('password_reset_otps')
-          .doc(email.toLowerCase())
+          .doc(normalizedEmail)
           .set({
-            'email': email.toLowerCase(),
+            'email': normalizedEmail,
             'otp': otp,
             'createdAt': FieldValue.serverTimestamp(),
             'createdAtMs': timestamp.millisecondsSinceEpoch,
             'expiresAt': expiresAt.millisecondsSinceEpoch,
             'verified': false,
+            'consumed': false,
           })
           .timeout(_dbTimeout);
 
-      // Send OTP via email (non-blocking)
-      // Note: Requires Firebase Email Extension to be installed
       unawaited(
         EmailService.instance
-            .sendPasswordResetOtpEmail(email: email.toLowerCase(), otp: otp)
-            .catchError((_) {
-              // Email sending failed but OTP is saved
-            }),
+            .sendPasswordResetOtpEmail(email: normalizedEmail, otp: otp)
+            .catchError((_) {}),
       );
 
       return otp;
@@ -1215,9 +1214,10 @@ class FirestoreService {
     required String otp,
   }) async {
     try {
+      final normalizedEmail = email.trim().toLowerCase();
       final doc = await _firestore
           .collection('password_reset_otps')
-          .doc(email.toLowerCase())
+          .doc(normalizedEmail)
           .get()
           .timeout(_dbTimeout);
 
@@ -1229,29 +1229,77 @@ class FirestoreService {
       final storedOtp = data['otp'] as String;
       final expiresAtMs = data['expiresAt'] as int;
       final verified = data['verified'] as bool? ?? false;
+      final consumed = data['consumed'] as bool? ?? false;
 
-      // Check if expired
       if (DateTime.now().millisecondsSinceEpoch > expiresAtMs) {
         throw Exception('OTP expired. Request a new one.');
       }
 
-      // Check if already verified
-      if (verified) {
+      if (consumed) {
         throw Exception('OTP already used. Request a new one.');
       }
 
-      // Check OTP
+      if (verified) {
+        return true;
+      }
+
       if (storedOtp != otp.trim()) {
         throw Exception('Invalid OTP code.');
       }
 
-      // Mark as verified
-      await doc.reference.update({'verified': true}).timeout(_dbTimeout);
+      await doc.reference
+          .update({
+            'verified': true,
+            'verifiedAtMs': DateTime.now().millisecondsSinceEpoch,
+          })
+          .timeout(_dbTimeout);
 
       return true;
     } catch (e) {
       throw Exception('OTP verification failed: $e');
     }
+  }
+
+  Future<void> ensurePasswordResetOtpVerified(String email) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    final doc = await _firestore
+        .collection('password_reset_otps')
+        .doc(normalizedEmail)
+        .get()
+        .timeout(_dbTimeout);
+
+    if (!doc.exists) {
+      throw Exception('OTP not found. Request a new code.');
+    }
+
+    final data = doc.data()!;
+    final expiresAtMs = data['expiresAt'] as int? ?? 0;
+    final verified = data['verified'] as bool? ?? false;
+    final consumed = data['consumed'] as bool? ?? false;
+
+    if (DateTime.now().millisecondsSinceEpoch > expiresAtMs) {
+      throw Exception('OTP expired. Request a new code.');
+    }
+
+    if (!verified) {
+      throw Exception('Verify the OTP code first.');
+    }
+
+    if (consumed) {
+      throw Exception('OTP already used. Request a new code.');
+    }
+  }
+
+  Future<void> consumePasswordResetOtp(String email) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    await _firestore
+        .collection('password_reset_otps')
+        .doc(normalizedEmail)
+        .update({
+          'consumed': true,
+          'consumedAtMs': DateTime.now().millisecondsSinceEpoch,
+        })
+        .timeout(_dbTimeout);
   }
 
   /// Clean up expired OTPs
@@ -1384,8 +1432,8 @@ class FirestoreService {
       title: bio == 'Instructor at LearnHub' ? 'Course Instructor' : bio,
       bio: bio,
       avatarUrl: image,
-      rating: 4.8,
-      studentCount: 0,
+      rating: (data['rating'] as num?)?.toDouble() ?? 0,
+      studentCount: (data['studentCount'] as num?)?.toInt() ?? 0,
     );
   }
 

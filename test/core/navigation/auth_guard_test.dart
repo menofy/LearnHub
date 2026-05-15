@@ -5,8 +5,11 @@ import 'package:learnhub/core/navigation/auth_guard.dart';
 import 'package:learnhub/domain/entities/app_user.dart';
 import 'package:learnhub/domain/repositories/auth_repository.dart';
 import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late _FakeAuthRepository repository;
   late AuthProvider authProvider;
   late AuthGuard guard;
@@ -25,29 +28,45 @@ void main() {
     role: AppUserRole.instructor,
   );
 
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
+
   tearDown(() {
     authProvider.dispose();
     repository.dispose();
   });
 
-  test('reports unauthenticated state', () {
+  test('reports unauthenticated state', () async {
     repository = _FakeAuthRepository();
     authProvider = AuthProvider(repository);
     guard = AuthGuard(authProvider: authProvider);
 
+    expect(guard.isResolvingSession(), isTrue);
     expect(guard.isAuthenticated(), isFalse);
-    expect(guard.isNotAuthenticated(), isTrue);
+    expect(guard.isNotAuthenticated(), isFalse);
     expect(guard.getCurrentUser(), isNull);
     expect(guard.getCurrentUserId(), isNull);
     expect(guard.isStudent(), isFalse);
     expect(guard.isInstructor(), isFalse);
+
+    repository.emit(null);
+    await pumpEventQueue();
+
+    expect(guard.isResolvingSession(), isFalse);
+    expect(guard.isAuthenticated(), isFalse);
+    expect(guard.isNotAuthenticated(), isTrue);
   });
 
-  test('reports student role state', () {
+  test('reports student role state', () async {
     repository = _FakeAuthRepository(cachedUser: student);
     authProvider = AuthProvider(repository);
     guard = AuthGuard(authProvider: authProvider);
 
+    repository.emit(student);
+    await pumpEventQueue();
+
+    expect(guard.isResolvingSession(), isFalse);
     expect(guard.isAuthenticated(), isTrue);
     expect(guard.isNotAuthenticated(), isFalse);
     expect(guard.hasRole(AppUserRole.student), isTrue);
@@ -66,6 +85,7 @@ void main() {
     repository.emit(instructor);
     await pumpEventQueue();
 
+    expect(guard.isResolvingSession(), isFalse);
     expect(guard.isAuthenticated(), isTrue);
     expect(guard.isInstructor(), isTrue);
     expect(guard.getCurrentUser(), same(instructor));
@@ -74,6 +94,7 @@ void main() {
     await pumpEventQueue();
 
     expect(guard.isAuthenticated(), isFalse);
+    expect(guard.isNotAuthenticated(), isTrue);
     expect(guard.getCurrentUser(), isNull);
   });
 }
@@ -138,6 +159,37 @@ class _FakeAuthRepository implements AuthRepository {
 
   @override
   Future<bool> sendPasswordResetEmail({required String email}) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<String> generateAndSendPasswordResetOtp({
+    required String email,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<bool> verifyPasswordResetOtp({
+    required String email,
+    required String otp,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<PasswordResetOtpResult> resetPasswordWithOtp({
+    required String email,
+    required String newPassword,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
     throw UnimplementedError();
   }
 

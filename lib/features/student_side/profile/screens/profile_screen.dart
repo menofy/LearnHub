@@ -3,7 +3,7 @@ import 'package:learnhub/core/navigation/app_routes.dart';
 import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
 import 'package:learnhub/features/student_side/profile/widgets/profile_header_card.dart';
 import 'package:learnhub/features/student_side/profile/widgets/profile_menu_section.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:provider/provider.dart';
 
 class ProfileScreen extends StatelessWidget {

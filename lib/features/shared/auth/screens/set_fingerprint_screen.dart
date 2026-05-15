@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:learnhub/core/shared_widgets/edu_outline_button.dart';
 import 'package:learnhub/core/shared_widgets/edu_primary_button.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:provider/provider.dart';
 
 import 'package:learnhub/core/navigation/app_routes.dart';
+import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
 
 class SetFingerprintScreen extends StatefulWidget {
   const SetFingerprintScreen({super.key});
@@ -57,6 +59,11 @@ class _SetFingerprintScreenState extends State<SetFingerprintScreen> {
       }
 
       if (didAuthenticate) {
+        // Save biometric preference to AuthProvider
+        if (!mounted) return;
+        await context.read<AuthProvider>().setBiometricEnabled(true);
+        
+        if (!mounted) return;
         Navigator.of(context).pushNamed(AppRoutes.accountReady);
       } else {
         _showMessage('Fingerprint verification canceled. Try again.');
@@ -158,10 +165,16 @@ class _SetFingerprintScreenState extends State<SetFingerprintScreen> {
                     label: 'Skip',
                     onPressed: _authenticating
                         ? null
-                        : () => Navigator.of(context).pushNamedAndRemoveUntil(
-                            AppRoutes.root,
-                            (route) => false,
-                          ),
+                        : () async {
+                            // Skip biometric setup
+                            if (!mounted) return;
+                            await context.read<AuthProvider>().setBiometricEnabled(false);
+                            if (!mounted) return;
+                            Navigator.of(context).pushNamedAndRemoveUntil(
+                              AppRoutes.root,
+                              (route) => false,
+                            );
+                          },
                   ),
                 ),
                 const SizedBox(width: 12),

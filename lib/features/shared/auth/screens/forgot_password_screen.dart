@@ -5,6 +5,7 @@ import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
 import 'package:provider/provider.dart';
 
 import 'package:learnhub/core/navigation/app_routes.dart';
+import 'package:learnhub/core/navigation/route_args.dart';
 import 'package:learnhub/core/theme/app_colors.dart';
 import 'package:learnhub/core/utils/auth_validators.dart';
 
@@ -39,22 +40,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     final authProvider = context.read<AuthProvider>();
     authProvider.clearError();
 
-    final success = await authProvider.requestPasswordReset(
-      _emailController.text.trim(),
-    );
+    final email = _emailController.text.trim();
+    final success = await authProvider.sendPasswordResetOtp(email);
 
     if (!mounted) return;
 
     if (success) {
-      final messenger = ScaffoldMessenger.of(context);
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Check your email for password reset instructions.'),
-        ),
+      Navigator.of(context).pushNamed(
+        AppRoutes.otpVerification,
+        arguments: PasswordResetOtpArgs(email: email),
       );
-
-      Navigator.of(context).pop();
       return;
     }
 
@@ -99,7 +94,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const Center(child: LearnHubLogoMark(size: 80)),
                 const SizedBox(height: 24),
                 Text(
-                  'Reset Your Password',
+                  'Verify Your Email',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
@@ -108,7 +103,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Enter your email address to receive password reset instructions.',
+                  'Enter your email address to receive a 6-digit verification code before resetting your password.',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -130,7 +125,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 20),
                 EduPrimaryButton(
-                  label: 'Send Reset Link',
+                  label: 'Send Verification Code',
                   isLoading: authProvider.isLoading,
                   onPressed: authProvider.isLoading ? null : _submit,
                 ),

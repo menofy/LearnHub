@@ -1,9 +1,8 @@
 import 'package:flutter/foundation.dart';
-
-import '../../core/config/youtube_config.dart';
-import '../../core/utils/app_error_mapper.dart';
-import '../../data/sources/youtube_playlist_data_source.dart';
-import '../../domain/entities/youtube_video_item.dart';
+import 'package:learnhub/core/config/youtube_config.dart';
+import 'package:learnhub/core/utils/app_error_mapper.dart';
+import 'package:learnhub/data/sources/youtube_playlist_data_source.dart';
+import 'package:learnhub/domain/entities/youtube_video_item.dart';
 
 class YoutubePlaylistProvider extends ChangeNotifier {
   YoutubePlaylistProvider({YoutubePlaylistDataSource? dataSource})

@@ -34,6 +34,7 @@ dependencies:
   path: ^1.9.1
   flutter_svg: ^2.2.4
   video_player: ^2.10.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:
@@ -44,7 +45,7 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/icon_new.png"
+  image_path: "assets/icon/Logo_final.jpeg"
 
 flutter:
   uses-material-design: true

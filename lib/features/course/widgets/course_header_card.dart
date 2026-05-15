@@ -39,6 +39,8 @@ class CourseHeaderCard extends StatelessWidget {
     required this.outlineColor,
     required this.isDark,
     required this.curriculumWidgets,
+    required this.courseRating,
+    required this.studentCount,
   });
 
   final String courseTitle;
@@ -70,6 +72,8 @@ class CourseHeaderCard extends StatelessWidget {
   final Color outlineColor;
   final bool isDark;
   final List<Widget> curriculumWidgets;
+  final double courseRating;
+  final int studentCount;
 
   @override
   Widget build(BuildContext context) {
@@ -104,9 +108,9 @@ class CourseHeaderCard extends StatelessWidget {
                 size: 14,
               ),
               const SizedBox(width: 3),
-              const Text(
-                '4.2',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              Text(
+                courseRating.toStringAsFixed(1),
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
               ),
               const SizedBox(width: 8),
               GestureDetector(
@@ -162,7 +166,7 @@ class CourseHeaderCard extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: Text(
-              isEnrolled ? 'Enrolled' : 'Free',
+              isEnrolled ? 'Enrolled' : '$studentCount enrolled',
               style: const TextStyle(
                 color: Color(AppColors.primary),
                 fontSize: 30,

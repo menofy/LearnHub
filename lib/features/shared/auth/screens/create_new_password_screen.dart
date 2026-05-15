@@ -7,11 +7,16 @@ import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
 import 'package:provider/provider.dart';
 
 import 'package:learnhub/core/navigation/app_routes.dart';
+import 'package:learnhub/core/navigation/route_args.dart';
+import 'package:learnhub/domain/repositories/auth_repository.dart';
 
 class CreateNewPasswordScreen extends StatefulWidget {
-  const CreateNewPasswordScreen({super.key, this.oobCode = ''});
+  const CreateNewPasswordScreen({
+    super.key,
+    this.args = const CreateNewPasswordArgs(),
+  });
 
-  final String oobCode;
+  final CreateNewPasswordArgs args;
 
   @override
   State<CreateNewPasswordScreen> createState() =>
@@ -48,17 +53,39 @@ class _CreateNewPasswordScreenState extends State<CreateNewPasswordScreen> {
     final authProvider = context.read<AuthProvider>();
     authProvider.clearError();
 
-    final success = await authProvider.resetPasswordWithCode(
-      oobCode: widget.oobCode,
-      newPassword: _passwordController.text,
-    );
+    final success = widget.args.usesOtpFlow
+        ? await authProvider.resetPasswordWithOtp(
+            email: widget.args.email,
+            newPassword: _passwordController.text,
+          )
+        : await authProvider.resetPasswordWithCode(
+            oobCode: widget.args.oobCode,
+            newPassword: _passwordController.text,
+          );
 
     if (!mounted) return;
 
     if (success) {
-      Navigator.of(
-        context,
-      ).pushReplacementNamed(AppRoutes.resetPasswordSuccess);
+      final resetArgs =
+          widget.args.usesOtpFlow &&
+              authProvider.lastPasswordResetOtpResult ==
+                  PasswordResetOtpResult.resetLinkSent
+          ? ResetPasswordSuccessArgs(
+              title: 'Check Your Email',
+              message:
+                  authProvider.statusMessage ??
+                  'A secure reset link has been sent to your email.',
+            )
+          : ResetPasswordSuccessArgs(
+              title: 'Congratulations',
+              message:
+                  authProvider.statusMessage ??
+                  'Your password has been updated successfully.',
+            );
+      Navigator.of(context).pushReplacementNamed(
+        AppRoutes.resetPasswordSuccess,
+        arguments: resetArgs,
+      );
       return;
     }
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:learnhub/features/student_side/settings/widgets/language_option_card.dart';
 import 'package:learnhub/features/student_side/settings/widgets/language_settings_intro_card.dart';
 import 'package:learnhub/features/student_side/settings/widgets/settings_screen_header.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:provider/provider.dart';
 
 class LanguageSettingsScreen extends StatelessWidget {

@@ -6,8 +6,11 @@ import 'package:learnhub/data/services/auth_exceptions.dart';
 import 'package:learnhub/domain/entities/app_user.dart';
 import 'package:learnhub/domain/repositories/auth_repository.dart';
 import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late _FakeAuthRepository repository;
   late AuthProvider provider;
 
@@ -26,6 +29,7 @@ void main() {
   );
 
   setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
     repository = _FakeAuthRepository();
     provider = AuthProvider(repository);
   });
@@ -247,6 +251,33 @@ void main() {
     expect(repository.lastResetCodePassword, 'password123');
   });
 
+  test(
+    'changePassword delegates to repository for authenticated users',
+    () async {
+      repository.loginResult = student;
+      await provider.login(email: student.email, password: 'password123');
+
+      final success = await provider.changePassword(
+        currentPassword: 'password123',
+        newPassword: 'newPassword123',
+      );
+
+      expect(success, isTrue);
+      expect(repository.changePasswordCallCount, 1);
+      expect(repository.lastChangePasswordCurrent, 'password123');
+      expect(repository.lastChangePasswordNew, 'newPassword123');
+      expect(provider.statusMessage, AuthConstants.passwordChangedMessage);
+    },
+  );
+
+  test('savePin stores a device PIN and exposes configured state', () async {
+    final success = await provider.savePin(newPin: '1234');
+
+    expect(success, isTrue);
+    expect(provider.hasPinConfigured, isTrue);
+    expect(provider.statusMessage, 'PIN created successfully.');
+  });
+
   test('updateProfile requires an authenticated user', () async {
     final success = await provider.updateProfile(name: 'New Name');
 
@@ -293,10 +324,13 @@ class _FakeAuthRepository implements AuthRepository {
   Object? generatedOtpError;
   Object? verifyOtpError;
   Object? resetOtpError;
+  Object? changePasswordError;
 
   bool passwordResetResult = true;
   bool verifyOtpResult = true;
   String generatedOtp = '654321';
+  PasswordResetOtpResult resetOtpResult =
+      PasswordResetOtpResult.passwordUpdated;
 
   String? lastLoginEmail;
   String? lastRegisterName;
@@ -311,12 +345,15 @@ class _FakeAuthRepository implements AuthRepository {
   String? lastVerifyOtp;
   String? lastResetOtpEmail;
   String? lastResetOtpPassword;
+  String? lastChangePasswordCurrent;
+  String? lastChangePasswordNew;
   String? lastUpdateName;
   String? lastUpdatePhone;
 
   int logoutCallCount = 0;
   int passwordResetCallCount = 0;
   int resetWithOtpCallCount = 0;
+  int changePasswordCallCount = 0;
   int updateProfileCallCount = 0;
 
   @override
@@ -448,7 +485,8 @@ class _FakeAuthRepository implements AuthRepository {
     return verifyOtpResult;
   }
 
-  Future<void> resetPasswordWithOtp({
+  @override
+  Future<PasswordResetOtpResult> resetPasswordWithOtp({
     required String email,
     required String newPassword,
   }) async {
@@ -456,6 +494,19 @@ class _FakeAuthRepository implements AuthRepository {
     lastResetOtpEmail = email;
     lastResetOtpPassword = newPassword;
     final error = resetOtpError;
+    if (error != null) throw error;
+    return resetOtpResult;
+  }
+
+  @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    changePasswordCallCount++;
+    lastChangePasswordCurrent = currentPassword;
+    lastChangePasswordNew = newPassword;
+    final error = changePasswordError;
     if (error != null) throw error;
   }
 

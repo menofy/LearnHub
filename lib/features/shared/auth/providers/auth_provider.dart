@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:learnhub/core/auth_constants.dart';
 import 'package:learnhub/core/utils/app_error_mapper.dart';
 import 'package:learnhub/data/services/auth_exceptions.dart';
@@ -16,6 +18,10 @@ class AuthProvider extends ChangeNotifier {
     _hydratePreferencesCache();
     _authSub = _authRepository.authStateChanges().listen(
       (user) {
+        if (_shouldEndEphemeralSession(user)) {
+          unawaited(_expireEphemeralSession());
+          return;
+        }
         _currentUser = user;
         unawaited(_syncPersistedSession(user));
         _markSessionBootstrapComplete();
@@ -32,14 +38,23 @@ class AuthProvider extends ChangeNotifier {
   }
 
   final AuthRepository _authRepository;
+  final LocalAuthentication _localAuth = LocalAuthentication();
   StreamSubscription<AppUser?>? _authSub;
   SharedPreferences? _prefs;
   bool _isSessionBootstrapping = true;
+  bool _isEndingEphemeralSession = false;
 
   AppUser? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
+  String? _statusMessage;
   bool _requiresRoleSelection = false;
+  bool _rememberMeEnabled = true;
+  bool _biometricEnabled = false;
+  bool _faceIdEnabled = false;
+  bool _hasPinConfigured = false;
+  bool _ephemeralSessionActive = false;
+  PasswordResetOtpResult? _lastPasswordResetOtpResult;
 
   String? _pendingSignupName;
   String? _pendingSignupEmail;
@@ -51,7 +66,14 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _currentUser != null;
   bool get isSessionBootstrapping => _isSessionBootstrapping;
   String? get errorMessage => _errorMessage;
+  String? get statusMessage => _statusMessage;
   bool get requiresRoleSelection => _requiresRoleSelection;
+  bool get rememberMeEnabled => _rememberMeEnabled;
+  bool get biometricEnabled => _biometricEnabled;
+  bool get faceIdEnabled => _faceIdEnabled;
+  bool get hasPinConfigured => _hasPinConfigured;
+  PasswordResetOtpResult? get lastPasswordResetOtpResult =>
+      _lastPasswordResetOtpResult;
 
   String? get pendingSignupName => _pendingSignupName;
   String? get pendingSignupEmail => _pendingSignupEmail;
@@ -61,13 +83,20 @@ class AuthProvider extends ChangeNotifier {
       _pendingSignupEmail != null &&
       _pendingSignupOtp != null;
 
-  Future<bool> login({required String email, required String password}) async {
+  Future<bool> login({
+    required String email,
+    required String password,
+    bool? rememberMe,
+  }) async {
     _startAction();
     try {
+      final rememberChoice = rememberMe ?? _rememberMeEnabled;
+      await _setRememberMeEnabledInternal(rememberChoice);
       _currentUser = await _authRepository.login(
         email: email.trim(),
         password: password,
       );
+      await _setEphemeralSessionActive(!rememberChoice);
       await _syncPersistedSession(_currentUser);
       _markSessionBootstrapComplete();
       return true;
@@ -79,12 +108,18 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> loginWithGoogle({AppUserRole? roleForNewUser}) async {
+  Future<bool> loginWithGoogle({
+    AppUserRole? roleForNewUser,
+    bool? rememberMe,
+  }) async {
     _startAction();
     try {
+      final rememberChoice = rememberMe ?? _rememberMeEnabled;
+      await _setRememberMeEnabledInternal(rememberChoice);
       _currentUser = await _authRepository.loginWithGoogle(
         roleForNewUser: roleForNewUser,
       );
+      await _setEphemeralSessionActive(!rememberChoice);
       await _syncPersistedSession(_currentUser);
       _markSessionBootstrapComplete();
       return true;
@@ -116,6 +151,7 @@ class AuthProvider extends ChangeNotifier {
       );
       await _authRepository.logout();
       _currentUser = null;
+      await _setEphemeralSessionActive(false);
       await _clearPersistedSession();
       _markSessionBootstrapComplete();
       return true;
@@ -133,6 +169,7 @@ class AuthProvider extends ChangeNotifier {
       final userId = _currentUser?.id;
       await _authRepository.logout();
       _currentUser = null;
+      await _setEphemeralSessionActive(false);
       await _clearPersistedSession();
       _markSessionBootstrapComplete();
 
@@ -210,9 +247,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
-      // Cast to get access to the generateAndSendPasswordResetOtp method
-      final repo = _authRepository as dynamic;
-      final otp = await repo
+      final otp = await _authRepository
           .generateAndSendPasswordResetOtp(email: email.trim())
           .timeout(
             const Duration(seconds: 15),
@@ -244,8 +279,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
-      final repo = _authRepository as dynamic;
-      final verified = await repo
+      final verified = await _authRepository
           .verifyPasswordResetOtp(email: email.trim(), otp: otp.trim())
           .timeout(
             const Duration(seconds: 15),
@@ -276,8 +310,7 @@ class AuthProvider extends ChangeNotifier {
         return false;
       }
 
-      final repo = _authRepository as dynamic;
-      await repo
+      final result = await _authRepository
           .resetPasswordWithOtp(email: email.trim(), newPassword: newPassword)
           .timeout(
             const Duration(seconds: 15),
@@ -285,6 +318,14 @@ class AuthProvider extends ChangeNotifier {
               throw TimeoutException(AuthConstants.timeoutErrorMessage);
             },
           );
+
+      _lastPasswordResetOtpResult = result;
+      _statusMessage = switch (result) {
+        PasswordResetOtpResult.passwordUpdated =>
+          'Your password has been updated successfully.',
+        PasswordResetOtpResult.resetLinkSent =>
+          'OTP verified. A secure reset link has been sent to your email to finish updating your password.',
+      };
 
       // Clear pending data
       _pendingSignupEmail = null;
@@ -364,16 +405,124 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     _startAction();
     try {
+      if (_currentUser == null) {
+        _errorMessage = 'No active user session.';
+        return false;
+      }
       if (currentPassword.length < AuthConstants.minPasswordLength ||
           newPassword.length < AuthConstants.minPasswordLength) {
         _errorMessage =
             'Password must be at least ${AuthConstants.minPasswordLength} characters.';
         return false;
       }
+      if (currentPassword == newPassword) {
+        _errorMessage =
+            'Choose a new password that is different from your current password.';
+        return false;
+      }
+      await _authRepository.changePassword(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      );
+      _statusMessage = AuthConstants.passwordChangedMessage;
       return true;
+    } catch (error) {
+      _errorMessage = _friendlyError(error);
+      return false;
     } finally {
       _endAction();
     }
+  }
+
+  Future<void> setRememberMeEnabled(bool value) async {
+    await _setRememberMeEnabledInternal(value);
+    if (value) {
+      await _setEphemeralSessionActive(false);
+      await _syncPersistedSession(_currentUser);
+    } else if (_currentUser != null) {
+      await _setEphemeralSessionActive(true);
+      await _clearPersistedSession();
+    }
+    notifyListeners();
+  }
+
+  Future<void> setBiometricEnabled(bool value) async {
+    final prefs = await _preferences();
+    _biometricEnabled = value;
+    await prefs.setBool(AuthConstants.biometricEnabledKey, value);
+    if (!value && _faceIdEnabled) {
+      _faceIdEnabled = false;
+      await prefs.setBool(AuthConstants.faceIdEnabledKey, false);
+    }
+    notifyListeners();
+  }
+
+  /// Verify identity using biometric for sensitive operations
+  Future<bool> verifyWithBiometric({required String reason}) async {
+    try {
+      if (!_biometricEnabled) {
+        return false;
+      }
+
+      final didAuthenticate = await _localAuth.authenticate(
+        localizedReason: reason,
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+          useErrorDialogs: true,
+        ),
+      );
+
+      return didAuthenticate;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> setFaceIdEnabled(bool value) async {
+    final prefs = await _preferences();
+    _faceIdEnabled = value;
+    await prefs.setBool(AuthConstants.faceIdEnabledKey, value);
+    if (value && !_biometricEnabled) {
+      _biometricEnabled = true;
+      await prefs.setBool(AuthConstants.biometricEnabledKey, true);
+    }
+    notifyListeners();
+  }
+
+  Future<bool> savePin({String? currentPin, required String newPin}) async {
+    final normalizedPin = newPin.trim();
+    final existingHash = await _getStoredPinHash();
+
+    if (!_isValidPin(normalizedPin)) {
+      _errorMessage = 'PIN must be exactly ${AuthConstants.pinLength} digits.';
+      notifyListeners();
+      return false;
+    }
+
+    if (existingHash != null) {
+      final normalizedCurrentPin = currentPin?.trim() ?? '';
+      if (!_isValidPin(normalizedCurrentPin)) {
+        _errorMessage = 'Enter your current PIN to continue.';
+        notifyListeners();
+        return false;
+      }
+      if (_hashPin(normalizedCurrentPin) != existingHash) {
+        _errorMessage = 'Current PIN is incorrect.';
+        notifyListeners();
+        return false;
+      }
+    }
+
+    final prefs = await _preferences();
+    await prefs.setString(AuthConstants.pinHashKey, _hashPin(normalizedPin));
+    _hasPinConfigured = true;
+    _errorMessage = null;
+    _statusMessage = existingHash == null
+        ? 'PIN created successfully.'
+        : 'PIN updated successfully.';
+    notifyListeners();
+    return true;
   }
 
   Future<bool> updateProfile({
@@ -417,7 +566,9 @@ class AuthProvider extends ChangeNotifier {
 
   void clearError() {
     _errorMessage = null;
+    _statusMessage = null;
     _requiresRoleSelection = false;
+    _lastPasswordResetOtpResult = null;
     notifyListeners();
   }
 
@@ -439,7 +590,9 @@ class AuthProvider extends ChangeNotifier {
   void _startAction() {
     _isLoading = true;
     _errorMessage = null;
+    _statusMessage = null;
     _requiresRoleSelection = false;
+    _lastPasswordResetOtpResult = null;
     notifyListeners();
   }
 
@@ -449,7 +602,17 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _hydratePreferencesCache() async {
-    _prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
+    _prefs = prefs;
+    _rememberMeEnabled = prefs.getBool(AuthConstants.rememberMeKey) ?? true;
+    _biometricEnabled =
+        prefs.getBool(AuthConstants.biometricEnabledKey) ?? false;
+    _faceIdEnabled = prefs.getBool(AuthConstants.faceIdEnabledKey) ?? false;
+    _hasPinConfigured =
+        (prefs.getString(AuthConstants.pinHashKey)?.trim().isNotEmpty ?? false);
+    _ephemeralSessionActive =
+        prefs.getBool(AuthConstants.ephemeralSessionKey) ?? false;
+    notifyListeners();
   }
 
   Future<SharedPreferences> _preferences() async {
@@ -468,18 +631,17 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
 
-    final prefs = await _preferences();
-    final firebaseUser = fb_auth.FirebaseAuth.instance.currentUser;
-    final existingToken = prefs.getString(AuthConstants.tokenKey)?.trim() ?? '';
+    if (!_rememberMeEnabled) {
+      await _clearPersistedSession();
+      return;
+    }
 
+    final prefs = await _preferences();
+    final existingToken = prefs.getString(AuthConstants.tokenKey)?.trim() ?? '';
     var token = existingToken;
-    try {
-      final resolvedToken = await firebaseUser?.getIdToken();
-      if (resolvedToken != null && resolvedToken.trim().isNotEmpty) {
-        token = resolvedToken.trim();
-      }
-    } catch (_) {
-      // Keep the previous token if Firebase returns a transient error.
+    final resolvedToken = await _resolveFirebaseToken();
+    if (resolvedToken != null && resolvedToken.isNotEmpty) {
+      token = resolvedToken;
     }
 
     if (token.isNotEmpty) {
@@ -499,11 +661,83 @@ class AuthProvider extends ChangeNotifier {
     );
   }
 
+  Future<String?> _resolveFirebaseToken() async {
+    try {
+      final firebaseUser = fb_auth.FirebaseAuth.instance.currentUser;
+      final resolvedToken = await firebaseUser?.getIdToken();
+      if (resolvedToken == null) {
+        return null;
+      }
+      final trimmed = resolvedToken.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    } catch (_) {
+      // Keep the existing local token when Firebase Auth is unavailable.
+      return null;
+    }
+  }
+
   Future<void> _clearPersistedSession() async {
     final prefs = await _preferences();
     await prefs.remove(AuthConstants.tokenKey);
     await prefs.remove(AuthConstants.refreshTokenKey);
     await prefs.remove(AuthConstants.userKey);
+  }
+
+  Future<void> _setRememberMeEnabledInternal(bool value) async {
+    _rememberMeEnabled = value;
+    final prefs = await _preferences();
+    await prefs.setBool(AuthConstants.rememberMeKey, value);
+  }
+
+  Future<void> _setEphemeralSessionActive(bool value) async {
+    _ephemeralSessionActive = value;
+    final prefs = await _preferences();
+    await prefs.setBool(AuthConstants.ephemeralSessionKey, value);
+  }
+
+  bool _shouldEndEphemeralSession(AppUser? user) {
+    return !_isEndingEphemeralSession &&
+        _isSessionBootstrapping &&
+        _ephemeralSessionActive &&
+        user != null;
+  }
+
+  Future<void> _expireEphemeralSession() async {
+    if (_isEndingEphemeralSession) {
+      return;
+    }
+
+    _isEndingEphemeralSession = true;
+    try {
+      await _authRepository.logout();
+      _currentUser = null;
+      await _setEphemeralSessionActive(false);
+      await _clearPersistedSession();
+    } catch (error) {
+      _errorMessage = _friendlyError(error);
+    } finally {
+      _isEndingEphemeralSession = false;
+      _markSessionBootstrapComplete();
+      notifyListeners();
+    }
+  }
+
+  Future<String?> _getStoredPinHash() async {
+    final prefs = await _preferences();
+    final stored = prefs.getString(AuthConstants.pinHashKey)?.trim();
+    if (stored == null || stored.isEmpty) {
+      return null;
+    }
+    return stored;
+  }
+
+  bool _isValidPin(String value) {
+    final regex = RegExp('^\\d{${AuthConstants.pinLength}}\$');
+    return regex.hasMatch(value.trim());
+  }
+
+  String _hashPin(String pin) {
+    return sha256.convert(utf8.encode(pin.trim())).toString();
   }
 
   void _markSessionBootstrapComplete() {

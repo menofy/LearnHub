@@ -3,7 +3,7 @@ import 'package:learnhub/core/shared_widgets/content_loading_skeleton.dart';
 import 'package:learnhub/core/shared_widgets/edu_media.dart';
 import 'package:learnhub/core/shared_widgets/error_retry_state.dart';
 import 'package:learnhub/features/course/providers/course_provider.dart';
-import 'package:learnhub/presentation/providers/youtube_playlist_provider.dart';
+import 'package:learnhub/features/course/providers/youtube_playlist_provider.dart';
 import 'package:provider/provider.dart';
 
 import 'package:learnhub/core/navigation/app_routes.dart';

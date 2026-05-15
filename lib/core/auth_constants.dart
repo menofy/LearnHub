@@ -10,6 +10,11 @@ class AuthConstants {
   static const String tokenKey = 'auth_token';
   static const String refreshTokenKey = 'refresh_token';
   static const String userKey = 'current_user';
+  static const String rememberMeKey = 'remember_me_enabled';
+  static const String ephemeralSessionKey = 'ephemeral_session_active';
+  static const String biometricEnabledKey = 'biometric_enabled';
+  static const String faceIdEnabledKey = 'face_id_enabled';
+  static const String pinHashKey = 'security_pin_hash';
 
   // OTP
   static const int otpLength = 6;

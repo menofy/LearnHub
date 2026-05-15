@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:learnhub/data/services/firestore_service.dart';
 import 'package:learnhub/domain/entities/instructor.dart';
+import 'package:learnhub/features/common/instructor_public/screens/instructor_messaging_screen.dart';
 import 'package:learnhub/features/common/instructor_public/widgets/instructor_courses_section.dart';
 import 'package:learnhub/features/common/instructor_public/widgets/instructor_details_action_row.dart';
 import 'package:learnhub/features/common/instructor_public/widgets/instructor_details_header.dart';
@@ -108,9 +109,12 @@ class _InstructorDetailsScreenState extends State<InstructorDetailsScreen> {
                       _loadFollowersCount();
                     },
                     onMessageTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Chat with ${widget.instructor.name}'),
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              InstructorMessagingScreen(
+                                instructor: widget.instructor,
+                              ),
                         ),
                       );
                     },

@@ -110,8 +110,10 @@ class _InstructorDetailsScreenState extends State<InstructorDetailsScreen> {
                     },
                     onMessageTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Chat with ${widget.instructor.name}'),
+                        const SnackBar(
+                          content: Text(
+                            'Messaging will be available in a future update.',
+                          ),
                         ),
                       );
                     },

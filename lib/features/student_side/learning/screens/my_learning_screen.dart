@@ -10,7 +10,7 @@ import 'package:learnhub/domain/entities/course.dart';
 import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
 import 'package:learnhub/features/student_side/learning/widgets/learning_course_tile.dart';
 import 'package:learnhub/features/student_side/learning/widgets/learning_screen_header.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:learnhub/features/course/providers/course_provider.dart';
 import 'package:provider/provider.dart';
 

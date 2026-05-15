@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:learnhub/domain/entities/instructor.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../screens/instructor_edit_profile_screen.dart';
 
 /// Edit Profile Button
 class InstructorEditProfileButton extends StatelessWidget {
-  const InstructorEditProfileButton({super.key});
+  const InstructorEditProfileButton({super.key, required this.instructor});
+
+  final Instructor instructor;
 
   @override
   Widget build(BuildContext context) {
@@ -26,8 +30,11 @@ class InstructorEditProfileButton extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
           onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Edit profile coming soon')),
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) =>
+                    InstructorEditProfileScreen(instructor: instructor),
+              ),
             );
           },
           child: const Center(

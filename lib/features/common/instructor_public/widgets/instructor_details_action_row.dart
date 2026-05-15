@@ -29,7 +29,7 @@ class InstructorDetailsActionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isOwnProfile) {
-      return const InstructorEditProfileButton();
+      return InstructorEditProfileButton(instructor: instructor);
     }
 
     return Row(

@@ -173,6 +173,8 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
                     softSurfaceColor: softSurfaceColor,
                     outlineColor: outlineColor,
                     isDark: isDark,
+                    courseRating: widget.course.rating,
+                    studentCount: widget.course.studentCount,
                     curriculumWidgets: _buildCurriculum(
                       lessons: lessons.take(8).toList(growable: false),
                       isEnrolled: isEnrolled,

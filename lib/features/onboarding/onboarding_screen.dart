@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:provider/provider.dart';
 
 import 'package:learnhub/core/navigation/app_routes.dart';
@@ -54,8 +54,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    
     return Scaffold(
-      backgroundColor: const Color(AppColors.bg),
+      backgroundColor: isDark ? colorScheme.surface : const Color(AppColors.bg),
       body: SafeArea(
         child: Column(
           children: [

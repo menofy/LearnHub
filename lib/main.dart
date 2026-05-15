@@ -11,8 +11,8 @@ import 'data/repositories/auth_repository_impl.dart';
 import 'data/repositories/course_repository_impl.dart';
 import 'data/services/fcm_service.dart';
 import 'firebase_options.dart';
-import 'presentation/providers/app_state_provider.dart';
-import 'presentation/providers/youtube_playlist_provider.dart';
+import 'features/course/providers/youtube_playlist_provider.dart';
+import 'features/shared/providers/app_state_provider.dart';
 
 Future<void> _handleBackgroundMessage(RemoteMessage message) async {
   await FCMService.handleBackgroundMessage(message);

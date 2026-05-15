@@ -6,7 +6,7 @@ import 'package:learnhub/features/home/screens/home_screen.dart';
 import 'package:learnhub/features/student_side/learning/screens/my_learning_screen.dart';
 import 'package:learnhub/features/student_side/profile/screens/profile_screen.dart';
 import 'package:learnhub/features/student_side/wishlist/wishlist_screen.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../../data/services/firestore_service.dart';

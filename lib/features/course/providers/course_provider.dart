@@ -178,6 +178,25 @@ class CourseProvider extends ChangeNotifier {
     return _filterInstructorsByCategory(platformInstructors, category);
   }
 
+  double ratingForInstructor(String instructorName, {double? explicitRating}) {
+    final normalizedExplicitRating = explicitRating ?? 0;
+    if (normalizedExplicitRating > 0) {
+      return normalizedExplicitRating;
+    }
+
+    final instructorCourses = coursesForInstructor(instructorName);
+    if (instructorCourses.isEmpty) {
+      return 0;
+    }
+
+    final totalRating = instructorCourses.fold<double>(
+      0,
+      (sum, course) => sum + course.rating,
+    );
+    final average = totalRating / instructorCourses.length;
+    return double.parse(average.toStringAsFixed(1));
+  }
+
   String primaryCategoryForInstructor(String instructorName) {
     final instructorCourses = coursesForInstructor(instructorName);
     if (instructorCourses.isEmpty) {
@@ -1750,9 +1769,10 @@ class CourseProvider extends ChangeNotifier {
       title: title,
       bio: bio,
       avatarUrl: instructor.avatarUrl,
-      rating: instructor.rating <= 0
-          ? (instructorCourses.isEmpty ? 4.6 : 4.8)
-          : instructor.rating,
+      rating: ratingForInstructor(
+        instructor.name,
+        explicitRating: instructor.rating,
+      ),
       studentCount: max(
         instructor.studentCount,
         instructorCourses.isEmpty ? 0 : instructorCourses.length * 124,

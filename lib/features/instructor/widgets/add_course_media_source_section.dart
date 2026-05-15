@@ -148,13 +148,22 @@ class _CloudUploadHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F7FF),
+        color: isDark 
+          ? colorScheme.surfaceContainer
+          : const Color(0xFFF4F7FF),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFD9E4FF)),
+        border: Border.all(
+          color: isDark
+            ? colorScheme.outline.withValues(alpha: 0.2)
+            : const Color(0xFFD9E4FF),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,14 +344,22 @@ class _SourcePreviewCard extends StatelessWidget {
               InstructorPill(
                 label: selectedLevel,
                 icon: Icons.school_outlined,
-                backgroundColor: const Color(0xFFF3ECFF),
-                foregroundColor: const Color(0xFF6C47D9),
+                backgroundColor: Theme.of(context).brightness == Brightness.dark 
+                  ? Theme.of(context).colorScheme.surfaceContainer
+                  : const Color(0xFFF3ECFF),
+                foregroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.primary
+                  : const Color(0xFF6C47D9),
               ),
               InstructorPill(
                 label: sourceLabel,
                 icon: Icons.smart_display_outlined,
-                backgroundColor: const Color(0xFFEFF2FF),
-                foregroundColor: const Color(0xFF4153F4),
+                backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.surfaceContainer
+                  : const Color(0xFFEFF2FF),
+                foregroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.primary
+                  : const Color(0xFF4153F4),
               ),
             ],
           ),
@@ -467,13 +484,19 @@ class _UploadSummaryCard extends StatelessWidget {
               InstructorPill(
                 label: selectedLevel,
                 icon: Icons.school_outlined,
-                backgroundColor: const Color(0xFFF3ECFF),
-                foregroundColor: const Color(0xFF6C47D9),
+                backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.surfaceContainer
+                  : const Color(0xFFF3ECFF),
+                foregroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.primary
+                  : const Color(0xFF6C47D9),
               ),
               InstructorPill(
                 label: sourceLabel,
                 icon: Icons.video_library_rounded,
-                backgroundColor: const Color(0xFFEAF8F7),
+                backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? Theme.of(context).colorScheme.surfaceContainer
+                  : const Color(0xFFEAF8F7),
                 foregroundColor: const Color(AppColors.primary),
               ),
             ],
@@ -528,24 +551,32 @@ class _ManagedVideosList extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           if (items.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: const Color(AppColors.primary).withValues(alpha: 0.15),
-                ),
-              ),
-              child: Text(
-                'No videos selected yet. Add at least one lesson video before you publish.',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: secondaryText,
-                ),
-              ),
+            Builder(
+              builder: (context) {
+                final colorScheme = Theme.of(context).colorScheme;
+                final isDark = Theme.of(context).brightness == Brightness.dark;
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+                  decoration: BoxDecoration(
+                    color: isDark
+                      ? colorScheme.surfaceContainer
+                      : Colors.white.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(AppColors.primary).withValues(alpha: 0.15),
+                    ),
+                  ),
+                  child: Text(
+                    'No videos selected yet. Add at least one lesson video before you publish.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: secondaryText,
+                    ),
+                  ),
+                );
+              },
             )
           else
             Column(

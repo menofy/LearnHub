@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:learnhub/domain/entities/notification_preferences.dart';
 import 'package:learnhub/features/student_side/settings/widgets/settings_screen_header.dart';
 import 'package:learnhub/features/student_side/settings/widgets/settings_toggle_row.dart';
-import 'package:learnhub/presentation/providers/app_state_provider.dart';
+import 'package:learnhub/features/shared/providers/app_state_provider.dart';
 import 'package:provider/provider.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {

@@ -160,6 +160,17 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _authService.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+  }
+
+  @override
   Future<void> resetPasswordWithCode({
     required String oobCode,
     required String newPassword,
@@ -171,6 +182,7 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   /// Generate OTP and send to email
+  @override
   Future<String> generateAndSendPasswordResetOtp({
     required String email,
   }) async {
@@ -183,6 +195,7 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   /// Verify OTP
+  @override
   Future<bool> verifyPasswordResetOtp({
     required String email,
     required String otp,
@@ -194,18 +207,34 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   /// Reset password with verified OTP
-  Future<void> resetPasswordWithOtp({
+  @override
+  Future<PasswordResetOtpResult> resetPasswordWithOtp({
     required String email,
     required String newPassword,
   }) async {
-    // بعد التحقق من OTP، يمكنك استخدام Firebase Admin SDK
-    // أو Cloud Function لتعيين كلمة المرور
-    // للآن، سننشئ مستخدم جديد إذا لم يكن موجوداً
-    // أو نرسل بريد reset من Firebase
     try {
-      await _authService.sendPasswordResetEmail(email: email.trim());
+      final normalizedEmail = email.trim().toLowerCase();
+      await _firestoreService.ensurePasswordResetOtpVerified(normalizedEmail);
+
+      try {
+        await _authService.resetPasswordWithOtp(
+          email: normalizedEmail,
+          newPassword: newPassword,
+        );
+        await _firestoreService.consumePasswordResetOtp(normalizedEmail);
+        return PasswordResetOtpResult.passwordUpdated;
+      } on FirebaseAuthException catch (error) {
+        final code = error.code.trim().toLowerCase();
+        if (code != 'requires-backend' && code != 'requires-recent-login') {
+          rethrow;
+        }
+      }
+
+      await _authService.sendPasswordResetEmail(email: normalizedEmail);
+      await _firestoreService.consumePasswordResetOtp(normalizedEmail);
+      return PasswordResetOtpResult.resetLinkSent;
     } catch (_) {
-      // Ignore if email not found, OTP was already verified
+      rethrow;
     }
   }
 
@@ -270,10 +299,9 @@ class AuthRepositoryImpl implements AuthRepository {
     required AppUserRole fallback,
   }) async {
     try {
-      return await _firestoreService.inferRoleForExistingAuthUser(uid).timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => fallback,
-      );
+      return await _firestoreService
+          .inferRoleForExistingAuthUser(uid)
+          .timeout(const Duration(seconds: 8), onTimeout: () => fallback);
     } catch (_) {
       return fallback;
     }
