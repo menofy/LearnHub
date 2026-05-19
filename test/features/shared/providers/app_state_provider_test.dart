@@ -85,7 +85,7 @@ void main() {
 
     expect(provider.certificates, hasLength(1));
     expect(provider.certificates.first.id, 'cert_flutter-101');
-    expect(provider.certificates.first.courseTitle, 'Flutter 101');
+    expect(provider.certificates.first.courseName, 'Flutter 101');
     expect(provider.certificateForCourseId('flutter-101'), isNotNull);
     expect(provider.certificateForCourseId('missing'), isNull);
 

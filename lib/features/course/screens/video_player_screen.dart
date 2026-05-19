@@ -38,6 +38,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   String _lessonSignature = '';
   bool _completionDialogShown = false;
   bool _isLoadingLessons = true;
+  bool _hasMarkedComplete = false;
 
   @override
   void initState() {
@@ -55,6 +56,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
 
     _configurePlayerForLesson(widget.lesson);
+    _setupPlayerListeners();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final provider = context.read<CourseProvider>();
@@ -87,6 +89,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    _controller.videoPlayerController?.removeListener(_handleVideoProgress);
     _controller.dispose();
     super.dispose();
   }
@@ -108,6 +111,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   void _configurePlayerForLesson(Lesson lesson) {
+    _hasMarkedComplete = false;
     final localVideoPath = _localVideoPath(lesson.videoUrl);
     final isLocalFile = localVideoPath != null && localVideoPath.isNotEmpty;
     final isLiveStream =
@@ -122,6 +126,124 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         liveStream: isLiveStream,
       ),
     );
+
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _setupPositionListener();
+    });
+  }
+
+  void _setupPlayerListeners() {
+    _controller.addEventsListener((event) {
+      print('🎬 Video Event: ${event.betterPlayerEventType}');
+      if (_hasMarkedComplete) {
+        return;
+      }
+      if (event.betterPlayerEventType == BetterPlayerEventType.finished) {
+        print('✅ BetterPlayer finished event detected');
+        _hasMarkedComplete = true;
+        _markCurrentLessonCompletedIfUnmarked();
+      }
+    });
+
+    _setupPositionListener();
+  }
+
+  void _setupPositionListener() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final videoController = _controller.videoPlayerController;
+      if (videoController != null) {
+        videoController.addListener(_handleVideoProgress);
+        print('📍 Position listener attached');
+      } else {
+        print('⚠️ VideoPlayerController not yet available, will retry');
+        Future.delayed(const Duration(milliseconds: 500), _setupPositionListener);
+      }
+    });
+  }
+
+  void _handleVideoProgress() {
+    if (!mounted || _hasMarkedComplete) return;
+
+    final value = _controller.videoPlayerController?.value;
+    if (value == null) return;
+
+    final duration = value.duration;
+    final position = value.position;
+
+    if (duration == null || duration == Duration.zero) return;
+
+    final remainingSeconds = (duration - position).inSeconds.toDouble();
+
+    print('📊 Video progress: ${position.inSeconds}/${duration.inSeconds}s (${(position.inMilliseconds / duration.inMilliseconds * 100).toStringAsFixed(1)}%)');
+
+    if (remainingSeconds <= 3 && remainingSeconds >= 0) {
+      print('✅ Video nearly finished! (${remainingSeconds.toStringAsFixed(1)}s remaining)');
+      _hasMarkedComplete = true;
+      _markCurrentLessonCompletedIfUnmarked();
+    }
+  }
+
+  Future<void> _markCurrentLessonCompletedIfUnmarked() async {
+    print('🎯 _markCurrentLessonCompletedIfUnmarked called');
+    final provider = context.read<CourseProvider>();
+    final lessons = provider.lessonsByCourse(widget.courseId);
+    if (lessons.isEmpty || _currentLessonIndex >= lessons.length) {
+      print('⚠️ Invalid lesson state: lessons=${lessons.length}, index=$_currentLessonIndex');
+      return;
+    }
+
+    if (_completedLessonIndexes.contains(_currentLessonIndex)) {
+      print('ℹ️ Lesson already marked as complete');
+      return;
+    }
+
+    final lesson = lessons[_currentLessonIndex];
+    print('📝 Marking lesson ${lesson.title} as complete');
+    await provider.markLessonCompleted(
+      courseId: widget.courseId,
+      lessonId: lesson.id,
+    );
+    if (!mounted) {
+      print('⚠️ Widget not mounted, returning');
+      return;
+    }
+
+    final completedIndexes = <int>{
+      ..._completedLessonIndexes,
+      _currentLessonIndex,
+    };
+    final progress = _watchedProgressForState(
+      completedIndexes,
+      lessons.length,
+      _currentLessonIndex,
+    );
+
+    print('✅ Progress updated: ${(progress * 100).toStringAsFixed(0)}%');
+
+    setState(() {
+      _completedLessonIndexes = completedIndexes;
+      _watchedProgressPercent = progress;
+      if (progress < 1) {
+        _completionDialogShown = false;
+      }
+    });
+
+    _persistPlaybackState(
+      provider: provider,
+      lessons: lessons,
+      currentLessonIndex: _currentLessonIndex,
+      completedIndexes: completedIndexes,
+      activeLessonId: lesson.id,
+    );
+
+    if (progress >= 1 && !_completionDialogShown) {
+      _completionDialogShown = true;
+      print('🎉 Course completed! Showing dialog...');
+      _showCourseCompletedDialog();
+    }
   }
 
   Course? _resolveCourse(CourseProvider provider) {

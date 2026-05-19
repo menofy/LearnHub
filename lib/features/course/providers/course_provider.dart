@@ -5,6 +5,7 @@ import 'dart:math' show max;
 import 'package:flutter/foundation.dart';
 import 'package:learnhub/core/utils/app_error_mapper.dart';
 import 'package:learnhub/data/services/firestore_service.dart';
+import 'package:learnhub/domain/entities/certificate.dart';
 import 'package:learnhub/domain/entities/course.dart';
 import 'package:learnhub/domain/entities/course_review.dart';
 import 'package:learnhub/domain/entities/instructor.dart';
@@ -113,9 +114,17 @@ class CourseProvider extends ChangeNotifier {
       .where((course) => _wishlistCourseIds.contains(course.id))
       .toList();
 
-  List<Course> get enrolledCourses => _courses
-      .where((course) => _enrolledCourseIds.contains(course.id))
-      .toList();
+  List<Course> get enrolledCourses {
+    final result = _courses
+        .where((course) => _enrolledCourseIds.contains(course.id))
+        .toList();
+    print('📚 enrolledCourses getter called: _courses=${_courses.length}, _enrolledCourseIds=${_enrolledCourseIds.length}, result=${result.length}');
+    if (result.isEmpty && _enrolledCourseIds.isNotEmpty) {
+      print('⚠️⚠️⚠️ PROBLEM: IDs registered but courses not in _courses! IDs: $_enrolledCourseIds');
+      print('📊 Available course IDs: ${_courses.map((c) => c.id).toList()}');
+    }
+    return result;
+  }
 
   List<Course> get continueLearningCourses =>
       enrolledCourses.where((course) {
@@ -865,7 +874,9 @@ class CourseProvider extends ChangeNotifier {
     required String userId,
     required String courseId,
   }) async {
+    print('📌 enrollCourse called for user: $userId, course: $courseId');
     if (_enrolledCourseIds.contains(courseId)) {
+      print('⚠️ Already enrolled in this course');
       return;
     }
 
@@ -878,11 +889,45 @@ class CourseProvider extends ChangeNotifier {
     _watchedPercentByCourse.putIfAbsent(courseId, () => 0.0);
     _persistLocalState();
     notifyListeners();
+    print('✅ Local enrollment applied, UI notified');
 
     try {
+      print('🌐 Sending enrollment to backend...');
       await _courseRepository.enrollCourse(userId: userId, courseId: courseId);
+      print('✅ Backend enrollment successful');
+      
+      // Create a certificate automatically when enrolled
+      try {
+        final course = _courses.firstWhere((c) => c.id == courseId);
+        final certificate = Certificate(
+          id: _generateCertificateId(),
+          studentId: userId,
+          studentName: 'Student', // Will be updated from user data
+          courseId: courseId,
+          courseName: course.title,
+          instructorName: course.instructorName ?? 'Instructor',
+          issuedDate: DateTime.now(),
+          completionPercentage: 0.0,
+          certificateUrl: '',
+          certificateName: '${course.title} - In Progress',
+        );
+        
+        print('📜 Saving certificate...');
+        await FirestoreService.instance.saveCertificate(userId, certificate.toMap());
+        print('✅ Certificate saved');
+      } catch (certError) {
+        print('⚠️ Error creating certificate: $certError');
+        // Don't fail enrollment if certificate creation fails
+      }
+      
+      // Reload enrolled courses to sync with Firestore (force refresh to bypass cache)
+      print('🔄 Force-loading enrolled courses from Firestore...');
+      await loadEnrolledCourses(userId, showLoading: false, force: true);
+      print('✅ Enrolled courses reloaded');
+      
       _scheduleRemoteSync();
     } catch (error) {
+      print('❌ Enrollment error: $error');
       final syncMessage = AppErrorMapper.data(
         error,
         fallback:
@@ -899,6 +944,7 @@ class CourseProvider extends ChangeNotifier {
   Future<void> loadEnrolledCourses(
     String userId, {
     bool showLoading = true,
+    bool force = false,
   }) async {
     final normalizedUserId = userId.trim();
     if (normalizedUserId.isEmpty) {
@@ -906,7 +952,7 @@ class CourseProvider extends ChangeNotifier {
     }
 
     final inFlight = _enrolledCoursesFutures[normalizedUserId];
-    if (inFlight != null) {
+    if (inFlight != null && !force) {
       return inFlight;
     }
 
@@ -932,9 +978,16 @@ class CourseProvider extends ChangeNotifier {
     _errorMessage = null;
 
     try {
+      print('🔄 Loading enrolled courses for user: $userId');
       final enrolled = await _courseRepository.getEnrolledCourses(userId);
+      print('✅ Got ${enrolled.length} enrolled courses from repository');
       final remoteEnrolled = enrolled.map((course) => course.id).toSet();
+      print('📝 Remote enrolled IDs: $remoteEnrolled');
+      print('📊 All courses in memory: ${_courses.length}');
+      
       _enrolledCourseIds = <String>{..._enrolledCourseIds, ...remoteEnrolled};
+      print('✨ Updated _enrolledCourseIds: $_enrolledCourseIds');
+      
       _progressByCourse.removeWhere((courseId, _) {
         return !_enrolledCourseIds.contains(courseId);
       });
@@ -950,7 +1003,9 @@ class CourseProvider extends ChangeNotifier {
         }
       }
       _persistLocalState();
+      print('🎯 Enrolled courses loaded successfully');
     } catch (error) {
+      print('❌ Error loading enrolled courses: $error');
       _errorMessage = AppErrorMapper.data(
         error,
         fallback: 'Unable to load enrolled courses.',
@@ -960,6 +1015,7 @@ class CourseProvider extends ChangeNotifier {
         _setLoading(false);
       } else {
         notifyListeners();
+        print('🔔 notifyListeners() called');
       }
     }
   }
@@ -993,12 +1049,45 @@ class CourseProvider extends ChangeNotifier {
 
     final total = lessons.length;
     if (total > 0) {
-      _progressByCourse[courseId] = (completed.length / total).clamp(0, 1);
+      final progress = (completed.length / total).clamp(0, 1).toDouble();
+      _progressByCourse[courseId] = progress;
       final watchedPercent = _estimatedWatchedPercent(
         courseId,
         totalLessons: total,
       );
       _watchedPercentByCourse[courseId] = watchedPercent;
+
+      // Check if course is 100% complete
+      if (progress >= 1.0) {
+        print('🎓 Course $courseId completed 100%! Updating certificate...');
+        // Update certificate status
+        try {
+          // Get the course to find the title
+          final course = _courses.firstWhere(
+            (c) => c.id == courseId,
+            orElse: () => Course(
+              id: courseId,
+              title: 'Course',
+              category: '',
+            ),
+          );
+          
+          // Update all matching certificates for this course
+          final userId = _lastLoadedUserId;
+          if (userId != null) {
+            await FirestoreService.instance.updateCertificateCompletion(
+              userId: userId,
+              courseId: courseId,
+              courseName: course.title,
+              completionPercentage: 100.0,
+              certificateName: '${course.title} - Completed',
+            );
+            print('✅ Certificate updated to Completed for $courseId');
+          }
+        } catch (e) {
+          print('⚠️ Error updating certificate: $e');
+        }
+      }
     }
 
     _persistLocalState();
@@ -1124,16 +1213,26 @@ class CourseProvider extends ChangeNotifier {
       }
     }
 
-    final resolvedWatchedPercent =
+    final incomingWatchedPercent =
         watchedPercent?.clamp(0, 1).toDouble() ??
         _estimatedWatchedPercent(
           normalizedCourseId,
           totalLessons:
               (_lessonsByCourse[normalizedCourseId] ?? <Lesson>[]).length,
         );
+    final completionFloor = _progressByCourse[normalizedCourseId] ?? 0;
+    final previousWatchedPercent =
+        _watchedPercentByCourse[normalizedCourseId] ?? 0;
+    final resolvedWatchedPercent = incomingWatchedPercent >
+            previousWatchedPercent
+        ? incomingWatchedPercent
+        : previousWatchedPercent;
+    final boundedWatchedPercent = resolvedWatchedPercent < completionFloor
+        ? completionFloor
+        : resolvedWatchedPercent;
     if ((_watchedPercentByCourse[normalizedCourseId] ?? 0) !=
-        resolvedWatchedPercent) {
-      _watchedPercentByCourse[normalizedCourseId] = resolvedWatchedPercent;
+        boundedWatchedPercent) {
+      _watchedPercentByCourse[normalizedCourseId] = boundedWatchedPercent;
     }
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
@@ -1624,6 +1723,10 @@ class CourseProvider extends ChangeNotifier {
     }
     _isLoading = value;
     notifyListeners();
+  }
+
+  String _generateCertificateId() {
+    return 'cert_${DateTime.now().millisecondsSinceEpoch}_${(DateTime.now().millisecond * 10).toStringAsFixed(0)}';
   }
 
   bool _sameCourseList(List<Course> a, List<Course> b) {

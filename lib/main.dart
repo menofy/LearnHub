@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:learnhub/features/course/providers/course_provider.dart';
 import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
+import 'package:learnhub/features/student_side/profile/providers/certificate_provider.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
@@ -41,6 +42,9 @@ Future<void> main() async {
         ),
         ChangeNotifierProvider<YoutubePlaylistProvider>(
           create: (_) => YoutubePlaylistProvider(),
+        ),
+        ChangeNotifierProvider<CertificateProvider>(
+          create: (_) => CertificateProvider(),
         ),
       ],
       child: const LearnHubApp(),
