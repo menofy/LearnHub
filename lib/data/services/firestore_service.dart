@@ -52,6 +52,8 @@ class FirestoreService {
       _firestore.collection('notifications');
   CollectionReference<Map<String, dynamic>> get _fcmTokens =>
       _firestore.collection('fcm_tokens');
+  CollectionReference<Map<String, dynamic>> get _certificates =>
+      _firestore.collection('certificates');
 
   List<String> _sanitizeUploadedVideoUrls(Iterable<String> values) {
     final sanitized = <String>[];
@@ -1578,6 +1580,163 @@ class FirestoreService {
     // This will be used to identify which platform the token is from
     // Can be overridden by FCMService if needed
     return 'android'; // Default for now, will be determined by platform detection in real usage
+  }
+
+  // ==================== Certificate Methods ====================
+
+  Future<void> saveCertificate(String userId, Map<String, dynamic> certificateData) async {
+    try {
+      final docId = certificateData['id'] as String;
+      await _certificates
+          .doc(userId)
+          .collection('userCertificates')
+          .doc(docId)
+          .set({
+            ...certificateData,
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true))
+          .timeout(_dbTimeout);
+    } catch (e) {
+      developer.log('Error saving certificate: $e', name: 'FirestoreService');
+      rethrow;
+    }
+  }
+
+  Stream<List<Map<String, dynamic>>> streamUserCertificates(String userId) {
+    return _certificates
+        .doc(userId)
+        .collection('userCertificates')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs
+              .map((doc) => {...doc.data(), 'id': doc.id})
+              .toList();
+        });
+  }
+
+  Future<List<Map<String, dynamic>>> getUserCertificates(String userId) async {
+    try {
+      final snapshot = await _certificates
+          .doc(userId)
+          .collection('userCertificates')
+          .orderBy('createdAt', descending: true)
+          .get()
+          .timeout(_dbTimeout);
+      
+      return snapshot.docs
+          .map((doc) => {...doc.data(), 'id': doc.id})
+          .toList();
+    } catch (e) {
+      developer.log('Error getting user certificates: $e', name: 'FirestoreService');
+      return [];
+    }
+  }
+
+  Future<void> updateCertificatePdfUrl(String userId, String certificateId, String pdfUrl) async {
+    try {
+      await _certificates
+          .doc(userId)
+          .collection('userCertificates')
+          .doc(certificateId)
+          .update({
+            'certificateUrl': pdfUrl,
+            'updatedAt': FieldValue.serverTimestamp(),
+          })
+          .timeout(_dbTimeout);
+    } catch (e) {
+      developer.log('Error updating certificate PDF URL: $e', name: 'FirestoreService');
+      rethrow;
+    }
+  }
+
+  Future<void> shareCertificate(String userId, String certificateId, List<String> sharedWith) async {
+    try {
+      await _certificates
+          .doc(userId)
+          .collection('userCertificates')
+          .doc(certificateId)
+          .update({
+            'sharedWith': sharedWith,
+            'isShared': true,
+            'sharedAt': FieldValue.serverTimestamp(),
+          })
+          .timeout(_dbTimeout);
+    } catch (e) {
+      developer.log('Error sharing certificate: $e', name: 'FirestoreService');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getCertificateById(String userId, String certificateId) async {
+    try {
+      final doc = await _certificates
+          .doc(userId)
+          .collection('userCertificates')
+          .doc(certificateId)
+          .get()
+          .timeout(_dbTimeout);
+      
+      if (!doc.exists) return null;
+      return {...doc.data() ?? {}, 'id': doc.id};
+    } catch (e) {
+      developer.log('Error getting certificate: $e', name: 'FirestoreService');
+      return null;
+    }
+  }
+
+  Future<void> deleteCertificate(String userId, String certificateId) async {
+    try {
+      await _certificates
+          .doc(userId)
+          .collection('userCertificates')
+          .doc(certificateId)
+          .delete()
+          .timeout(_dbTimeout);
+    } catch (e) {
+      developer.log('Error deleting certificate: $e', name: 'FirestoreService');
+      rethrow;
+    }
+  }
+
+  Future<void> updateCertificateCompletion({
+    required String userId,
+    required String courseId,
+    required String courseName,
+    required double completionPercentage,
+    required String certificateName,
+  }) async {
+    try {
+      // Query for certificates matching this course and user
+      final snapshot = await _certificates
+          .doc(userId)
+          .collection('userCertificates')
+          .where('courseId', isEqualTo: courseId)
+          .get()
+          .timeout(_dbTimeout);
+
+      // Update all matching certificates
+      for (final doc in snapshot.docs) {
+        await doc.reference.update({
+          'completionPercentage': completionPercentage,
+          'certificateName': certificateName,
+          'issuedDate': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }).timeout(_dbTimeout);
+      }
+      
+      developer.log(
+        'Updated ${snapshot.docs.length} certificate(s) for course $courseId',
+        name: 'FirestoreService',
+      );
+    } catch (e) {
+      developer.log(
+        'Error updating certificate completion: $e',
+        name: 'FirestoreService',
+      );
+      rethrow;
+    }
   }
 }
 

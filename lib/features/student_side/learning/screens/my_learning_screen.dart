@@ -34,10 +34,17 @@ class _MyLearningScreenState extends State<MyLearningScreen> {
       final courseProvider = context.read<CourseProvider>();
       final userId = context.read<AuthProvider>().currentUser?.id;
 
+      debugPrint('🎓 MyLearningScreen initState: userId=$userId');
       if (courseProvider.courses.isEmpty) {
+        debugPrint('📚 Loading courses (empty)...');
         courseProvider.loadCourses();
+      } else {
+        debugPrint(
+          '📚 Courses already loaded: ${courseProvider.courses.length}',
+        );
       }
       if (userId != null) {
+        debugPrint('👤 Loading enrolled courses for user...');
         courseProvider.loadEnrolledCourses(userId, showLoading: false);
       }
     });
@@ -68,14 +75,28 @@ class _MyLearningScreenState extends State<MyLearningScreen> {
   }
 
   void _openCertificate(Course course, AppStateProvider appState) {
-    final certificate =
-        appState.certificateForCourseId(course.id) ??
-        Certificate(
-          id: 'cert_${course.id}',
-          courseTitle: course.title,
-          issueDate: DateTime.now(),
-          grade: 'Completed',
-        );
+    final currentUser = context.read<AuthProvider>().currentUser;
+    final existing = appState.certificateForCourseId(course.id);
+    final certificate = Certificate(
+      id: existing?.id ?? 'cert_${course.id}',
+      studentId: (existing?.studentId.trim().isNotEmpty ?? false)
+          ? existing!.studentId
+          : (currentUser?.id ?? ''),
+      studentName: (existing?.studentName.trim().isNotEmpty ?? false)
+          ? existing!.studentName
+          : (currentUser?.name ?? ''),
+      courseId: existing?.courseId ?? course.id,
+      courseName: existing?.courseName ?? course.title,
+      instructorName: (existing?.instructorName.trim().isNotEmpty ?? false)
+          ? existing!.instructorName
+          : (course.instructorName.trim().isNotEmpty
+                ? course.instructorName
+                : 'LearnHub Instructor'),
+      issuedDate: existing?.issuedDate ?? DateTime.now(),
+      completionPercentage: existing?.completionPercentage ?? 100,
+      certificateUrl: existing?.certificateUrl ?? '',
+      certificateName: existing?.certificateName,
+    );
 
     Navigator.of(context).pushNamed(
       AppRoutes.certificateDetails,
@@ -116,11 +137,24 @@ class _MyLearningScreenState extends State<MyLearningScreen> {
 
     final completed = provider.completedCourses;
     final ongoing = provider.continueLearningCourses;
+    final enrolled = provider.enrolledCourses;
     _syncCertificatesIfNeeded(completed);
+
+    debugPrint('🎯 MyLearningScreen build:');
+    debugPrint(
+      '   completed=${completed.length}, ongoing=${ongoing.length}, '
+      'enrolled=${enrolled.length}',
+    );
+    debugPrint('   _completedTab=$_completedTab');
 
     final visible = _completedTab
         ? completed
-        : (ongoing.isEmpty ? provider.enrolledCourses : ongoing);
+        : (ongoing.isEmpty ? enrolled : ongoing);
+
+    debugPrint(
+      '   visible=${visible.length} '
+      '(showing ${_completedTab ? 'completed' : 'enrolled/ongoing'})',
+    );
     final primaryContinueCourse = ongoing.isEmpty ? null : ongoing.first;
 
     final content = SafeArea(
@@ -152,16 +186,23 @@ class _MyLearningScreenState extends State<MyLearningScreen> {
                       itemBuilder: (context, index) {
                         final course = visible[index];
                         final progress = provider.progressForCourse(course.id);
+                        final isComplete = progress >= 1.0;
                         return LearningCourseTile(
                           course: course,
-                          isCompleted: _completedTab,
+                          isCompleted: _completedTab && isComplete,
                           progress: progress,
                           resumeLessonTitle: provider
                               .resumeLessonForCourse(course.id)
                               ?.title,
-                          onTap: () => _completedTab
-                              ? _openCertificate(course, appState)
-                              : _openCourseDetails(course),
+                          onTap: () {
+                            if (_completedTab && isComplete) {
+                              // Only open certificate if truly 100% complete
+                              _openCertificate(course, appState);
+                            } else {
+                              // For ongoing courses, open course details
+                              _openCourseDetails(course);
+                            }
+                          },
                         );
                       },
                     ),

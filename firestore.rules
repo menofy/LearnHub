@@ -133,6 +133,13 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // Certificates - simplified structure for user certificates
+    match /certificates/{userId}/userCertificates/{certificateId} {
+      allow read: if isSelf(userId) || isAdmin();
+      allow create, update: if isSelf(userId);
+      allow delete: if isSelf(userId) || isAdmin();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

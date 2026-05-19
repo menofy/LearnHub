@@ -338,13 +338,18 @@ class AppStateProvider extends ChangeNotifier {
               final existing = previousById[certificateId];
               return Certificate(
                 id: certificateId,
-                courseTitle: course.title,
-                issueDate: existing?.issueDate ?? DateTime.now(),
-                grade: existing?.grade ?? 'Completed',
+                studentId: '',
+                studentName: '',
+                courseId: course.id,
+                courseName: course.title,
+                instructorName: course.instructorId,
+                issuedDate: existing?.issuedDate ?? DateTime.now(),
+                completionPercentage: 100,
+                certificateUrl: '',
               );
             })
             .toList(growable: false)
-          ..sort((a, b) => b.issueDate.compareTo(a.issueDate));
+          ..sort((a, b) => b.issuedDate.compareTo(a.issuedDate));
 
     if (_sameCertificates(nextCertificates, _certificates)) {
       return;
@@ -632,20 +637,14 @@ class AppStateProvider extends ChangeNotifier {
   }
 
   Certificate? _certificateFromMap(Map<dynamic, dynamic> item) {
-    final id = item['id']?.toString() ?? '';
-    final courseTitle = item['courseTitle']?.toString() ?? '';
-    if (id.isEmpty || courseTitle.isEmpty) {
+    try {
+      final map = item is Map<String, dynamic>
+          ? item
+          : Map<String, dynamic>.from(item);
+      return Certificate.fromMap(map);
+    } catch (_) {
       return null;
     }
-
-    return Certificate(
-      id: id,
-      courseTitle: courseTitle,
-      issueDate:
-          DateTime.tryParse(item['issueDate']?.toString() ?? '') ??
-          DateTime.now(),
-      grade: item['grade']?.toString() ?? 'Completed',
-    );
   }
 
   void _persistRecentSearches() {
@@ -685,14 +684,7 @@ class AppStateProvider extends ChangeNotifier {
       _scopedKey(_kCertificates),
       jsonEncode(
         _certificates
-            .map(
-              (certificate) => <String, dynamic>{
-                'id': certificate.id,
-                'courseTitle': certificate.courseTitle,
-                'issueDate': certificate.issueDate.toIso8601String(),
-                'grade': certificate.grade,
-              },
-            )
+            .map((certificate) => certificate.toMap())
             .toList(growable: false),
       ),
     );
@@ -740,9 +732,9 @@ class AppStateProvider extends ChangeNotifier {
       final left = a[index];
       final right = b[index];
       if (left.id != right.id ||
-          left.courseTitle != right.courseTitle ||
-          left.issueDate != right.issueDate ||
-          left.grade != right.grade) {
+          left.courseName != right.courseName ||
+          left.issuedDate != right.issuedDate ||
+          left.completionPercentage != right.completionPercentage) {
         return false;
       }
     }

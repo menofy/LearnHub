@@ -41,14 +41,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     authProvider.clearError();
 
     final email = _emailController.text.trim();
-    final success = await authProvider.sendPasswordResetOtp(email);
+    final success = await authProvider.requestPasswordReset(email);
 
     if (!mounted) return;
 
     if (success) {
-      Navigator.of(context).pushNamed(
-        AppRoutes.otpVerification,
-        arguments: PasswordResetOtpArgs(email: email),
+      Navigator.of(context).pushReplacementNamed(
+        AppRoutes.resetPasswordSuccess,
+        arguments: ResetPasswordSuccessArgs(
+          title: 'Check Your Email',
+          message:
+              'We sent a password reset link to $email.\nOpen your email and follow the link to continue.',
+        ),
       );
       return;
     }
@@ -94,7 +98,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const Center(child: LearnHubLogoMark(size: 80)),
                 const SizedBox(height: 24),
                 Text(
-                  'Verify Your Email',
+                  'Reset Your Password',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w900,
@@ -103,7 +107,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Enter your email address to receive a 6-digit verification code before resetting your password.',
+                  'Enter your email address and we will send you a password reset link.',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -125,7 +129,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: 20),
                 EduPrimaryButton(
-                  label: 'Send Verification Code',
+                  label: 'Send Reset Link',
                   isLoading: authProvider.isLoading,
                   onPressed: authProvider.isLoading ? null : _submit,
                 ),
