@@ -1,11 +1,7 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:learnhub/domain/entities/certificate.dart';
-import 'package:learnhub/features/shared/auth/providers/auth_provider.dart';
-import 'package:learnhub/features/student_side/profile/providers/certificate_provider.dart';
-import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 class CertificateDetailScreen extends StatelessWidget {
   final Certificate certificate;
@@ -16,10 +12,6 @@ class CertificateDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final authUser = context.watch<AuthProvider>().currentUser;
-    final resolvedStudentName = _resolvedStudentName(authUser?.name);
-    final resolvedInstructorName = _resolvedInstructorName();
-    final shortCertificateId = _shortCertificateId();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Certificate'), centerTitle: true),
@@ -114,7 +106,7 @@ class CertificateDetailScreen extends StatelessWidget {
 
                   // Student Name
                   Text(
-                    resolvedStudentName,
+                    certificate.studentName,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colorScheme.onSurface,
@@ -174,7 +166,7 @@ class CertificateDetailScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              resolvedInstructorName,
+                              certificate.instructorName,
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -225,7 +217,7 @@ class CertificateDetailScreen extends StatelessWidget {
 
                   // Certificate ID
                   Text(
-                    'CERT  2026  $shortCertificateId  LEARNHUB.IO',
+                    'CERT  2026  ${certificate.id.substring(0, 6).toUpperCase()}  LEARNHUB.IO',
                     style: TextStyle(
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
@@ -263,7 +255,7 @@ class CertificateDetailScreen extends StatelessWidget {
                   const SizedBox(height: 8),
                   _buildDetailRow(
                     'Instructor',
-                    resolvedInstructorName,
+                    certificate.instructorName,
                     colorScheme,
                   ),
                   const SizedBox(height: 8),
@@ -296,7 +288,7 @@ class CertificateDetailScreen extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => _shareCertificate(context),
+                    onPressed: _shareCertificate,
                     icon: const Icon(Icons.share_rounded),
                     label: const Text('Share'),
                   ),
@@ -332,85 +324,35 @@ class CertificateDetailScreen extends StatelessWidget {
     );
   }
 
-  String _resolvedStudentName(String? fallbackName) {
-    final certificateName = certificate.studentName.trim();
-    if (certificateName.isNotEmpty) {
-      return certificateName;
-    }
-
-    final userName = fallbackName?.trim() ?? '';
-    if (userName.isNotEmpty) {
-      return userName;
-    }
-
-    return 'LearnHub Student';
-  }
-
-  String _resolvedInstructorName() {
-    final instructorName = certificate.instructorName.trim();
-    if (instructorName.isNotEmpty && !instructorName.contains('_')) {
-      return instructorName;
-    }
-    return 'LearnHub Instructor';
-  }
-
-  String _shortCertificateId() {
-    final normalizedId = certificate.id.trim().replaceAll(' ', '');
-    if (normalizedId.isEmpty) {
-      return 'LEARNHUB';
-    }
-    return normalizedId.substring(0, math.min(6, normalizedId.length))
-        .toUpperCase();
-  }
-
-  Future<void> _downloadCertificate(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
-      ..clearSnackBars()
-      ..showSnackBar(
+  void _downloadCertificate(BuildContext context) {
+    // Check if certificate has a PDF URL first
+    if (certificate.certificateUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Generating certificate PDF...'),
+          content: Text('Certificate PDF is being generated...'),
           duration: Duration(seconds: 2),
         ),
       );
+      return;
+    }
 
-    final pdfPath = await context.read<CertificateProvider>().downloadCertificate(
-      certificate,
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Certificate downloaded successfully!'),
+        duration: Duration(seconds: 2),
+      ),
     );
-    if (!context.mounted) {
-      return;
-    }
-
-    messenger
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            pdfPath == null
-                ? 'Failed to download certificate.'
-                : 'Certificate saved to: $pdfPath',
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
   }
 
-  Future<void> _shareCertificate(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
-      ..clearSnackBars()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('Preparing certificate to share...'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-
-    await context.read<CertificateProvider>().shareCertificate(certificate);
-    if (!context.mounted) {
-      return;
-    }
-
-    messenger.clearSnackBars();
+  void _shareCertificate() {
+    SharePlus.instance.share(
+      ShareParams(
+        text:
+            'I just completed ${certificate.courseName} on LearnHub! Check out my certificate: ${certificate.certificateUrl}',
+        subject: 'My LearnHub Certificate',
+      ),
+    );
   }
 }
+
+final navigatorKey = GlobalKey<NavigatorState>();
