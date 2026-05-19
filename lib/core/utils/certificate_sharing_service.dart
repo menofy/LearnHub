@@ -9,7 +9,8 @@ class CertificateSharingService {
     required String pdfPath,
   }) async {
     try {
-      final message = '''
+      final message =
+          '''
 🎓 I just completed the "${certificate.courseName}" course on LearnHub Academy!
 
 Instructor: ${certificate.instructorName}
@@ -35,7 +36,8 @@ Check out LearnHub Academy to start learning today! 📚
   /// Share certificate link to social media (WhatsApp)
   static Future<void> shareToWhatsApp(Certificate certificate) async {
     try {
-      final message = '''
+      final message =
+          '''
 🎓 I just completed the "${certificate.courseName}" course on LearnHub Academy!
 
 Instructor: ${certificate.instructorName}
@@ -55,7 +57,8 @@ Completion Percentage: ${certificate.completionPercentage.toInt()}%
   /// Share certificate link to social media (Twitter/X)
   static Future<void> shareToTwitter(Certificate certificate) async {
     try {
-      final message = '''
+      final message =
+          '''
 🎓 Just completed "${certificate.courseName}" on @LearnHubAcademy!
 
 Instructor: ${certificate.instructorName}
@@ -78,7 +81,8 @@ Join me in learning! #LearnHub #Education #Learning
     required String certificateUrl,
   }) async {
     try {
-      final message = '''
+      final message =
+          '''
 🎓 I just completed the "${certificate.courseName}" course on LearnHub Academy!
 
 Instructor: ${certificate.instructorName}
@@ -103,7 +107,8 @@ Completion Date: ${_formatDate(certificate.issuedDate)}
   }) async {
     try {
       final subject = 'Certificate of Completion - ${certificate.courseName}';
-      final message = '''
+      final message =
+          '''
 Hi,
 
 I'm sharing my certificate of completion for the "${certificate.courseName}" course from LearnHub Academy.
@@ -132,8 +137,18 @@ Best regards!
 
   static String _formatDate(DateTime date) {
     final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
