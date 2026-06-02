@@ -31,6 +31,7 @@ class _YoutubeFullscreenPlayerScreenState
     extends State<YoutubeFullscreenPlayerScreen> {
   late final YoutubePlayerController _controller;
   bool _hasMarkedComplete = false;
+  bool _isDisposing = false;
 
   @override
   void initState() {
@@ -70,6 +71,7 @@ class _YoutubeFullscreenPlayerScreenState
 
   @override
   void dispose() {
+    _isDisposing = true;
     _controller.removeListener(_handleYoutubePlayerState);
     _controller.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -143,7 +145,7 @@ class _YoutubeFullscreenPlayerScreenState
   }
 
   void _handleYoutubePlayerState() {
-    if (!mounted || _hasMarkedComplete) {
+    if (!mounted || _isDisposing || _hasMarkedComplete) {
       return;
     }
 
@@ -187,13 +189,17 @@ class _YoutubeFullscreenPlayerScreenState
     }
 
     try {
-      await provider.markLessonCompleted(courseId: courseId, lessonId: lessonId);
+      await provider.markLessonCompleted(
+        courseId: courseId,
+        lessonId: lessonId,
+      );
       if (!mounted) {
         return;
       }
 
-      final completedIndexes = provider.completedLessonIndexesForCourse(courseId)
-        ..add(lessonIndex);
+      final completedIndexes = provider.completedLessonIndexesForCourse(
+        courseId,
+      )..add(lessonIndex);
       provider.saveCoursePlaybackState(
         courseId: courseId,
         currentLessonIndex: lessonIndex,

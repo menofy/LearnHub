@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:learnhub/core/shared_widgets/edu_primary_button.dart';
 import 'package:learnhub/features/course/widgets/course_curriculum_row.dart';
@@ -286,24 +285,6 @@ class _CourseDetailsScreenState extends State<CourseDetailsScreen> {
           courseTitle: widget.course.title,
           playlistId: playlistId,
           courseId: widget.course.id,
-        ),
-      );
-      return;
-    }
-
-    final videoId = FirestoreService.instance.extractYoutubeVideoId(
-      lesson.videoUrl,
-    );
-    if (videoId.isNotEmpty) {
-      Navigator.of(context).pushNamed(
-        AppRoutes.youtubeFullscreen,
-        arguments: YoutubeFullscreenArgs(
-          videoId: videoId,
-          title: lesson.title,
-          courseId: widget.course.id,
-          lessonId: lesson.id,
-          lessonIndex: lesson.order <= 0 ? 0 : lesson.order - 1,
-          watchedPercent: 0.35,
         ),
       );
       return;

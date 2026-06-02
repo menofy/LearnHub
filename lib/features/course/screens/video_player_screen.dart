@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:learnhub/features/course/providers/course_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import 'package:learnhub/core/navigation/app_routes.dart';
 import '../../../core/navigation/route_args.dart';
@@ -30,15 +33,18 @@ class VideoPlayerScreen extends StatefulWidget {
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late final BetterPlayerController _controller;
+  YoutubePlayerController? _youtubeController;
 
   int _currentLessonIndex = 0;
   Set<int> _completedLessonIndexes = <int>{};
   double _watchedProgressPercent = 0;
   String? _activeLessonId;
   String _lessonSignature = '';
+  String _activeYoutubeVideoId = '';
   bool _completionDialogShown = false;
   bool _isLoadingLessons = true;
   bool _hasMarkedComplete = false;
+  bool _isDisposing = false;
 
   @override
   void initState() {
@@ -89,7 +95,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    _isDisposing = true;
     _controller.videoPlayerController?.removeListener(_handleVideoProgress);
+    final youtubeController = _youtubeController;
+    _youtubeController = null;
+    if (youtubeController != null) {
+      youtubeController.removeListener(_handleYoutubePlayerState);
+      youtubeController.dispose();
+    }
     _controller.dispose();
     super.dispose();
   }
@@ -111,7 +124,36 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   void _configurePlayerForLesson(Lesson lesson) {
+    if (_isDisposing) {
+      return;
+    }
+
     _hasMarkedComplete = false;
+    final youtubeVideoId = _youtubeVideoId(lesson.videoUrl);
+    if (youtubeVideoId.isNotEmpty) {
+      final previousYoutubeVideoId = _activeYoutubeVideoId;
+      _activeYoutubeVideoId = youtubeVideoId;
+      unawaited(_pauseBetterPlayerSafely());
+      final controller = _youtubeController;
+      if (controller == null) {
+        _youtubeController = YoutubePlayerController(
+          initialVideoId: youtubeVideoId,
+          flags: const YoutubePlayerFlags(
+            autoPlay: true,
+            mute: false,
+            enableCaption: true,
+          ),
+        )..addListener(_handleYoutubePlayerState);
+      } else if (previousYoutubeVideoId != youtubeVideoId) {
+        controller.load(youtubeVideoId);
+      }
+      return;
+    }
+
+    _activeYoutubeVideoId = '';
+    _youtubeController?.removeListener(_handleYoutubePlayerState);
+    _youtubeController?.dispose();
+    _youtubeController = null;
     final localVideoPath = _localVideoPath(lesson.videoUrl);
     final isLocalFile = localVideoPath != null && localVideoPath.isNotEmpty;
     final isLiveStream =
@@ -133,14 +175,25 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     });
   }
 
+  Future<void> _pauseBetterPlayerSafely() async {
+    if (_controller.videoPlayerController == null) {
+      return;
+    }
+    try {
+      await _controller.pause();
+    } on StateError catch (error) {
+      debugPrint('BetterPlayer pause skipped: $error');
+    } catch (error) {
+      debugPrint('BetterPlayer pause failed: $error');
+    }
+  }
+
   void _setupPlayerListeners() {
     _controller.addEventsListener((event) {
-      debugPrint('🎬 Video Event: ${event.betterPlayerEventType}');
       if (_hasMarkedComplete) {
         return;
       }
       if (event.betterPlayerEventType == BetterPlayerEventType.finished) {
-        debugPrint('✅ BetterPlayer finished event detected');
         _hasMarkedComplete = true;
         _markCurrentLessonCompletedIfUnmarked();
       }
@@ -151,21 +204,24 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   void _setupPositionListener() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _isDisposing) return;
+      if (_activeYoutubeVideoId.isNotEmpty) return;
 
       final videoController = _controller.videoPlayerController;
       if (videoController != null) {
+        videoController.removeListener(_handleVideoProgress);
         videoController.addListener(_handleVideoProgress);
-        debugPrint('📍 Position listener attached');
       } else {
-        debugPrint('⚠️ VideoPlayerController not yet available, will retry');
-        Future.delayed(const Duration(milliseconds: 500), _setupPositionListener);
+        Future.delayed(
+          const Duration(milliseconds: 500),
+          _setupPositionListener,
+        );
       }
     });
   }
 
   void _handleVideoProgress() {
-    if (!mounted || _hasMarkedComplete) return;
+    if (!mounted || _isDisposing || _hasMarkedComplete) return;
 
     final value = _controller.videoPlayerController?.value;
     if (value == null) return;
@@ -177,46 +233,72 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
     final remainingSeconds = (duration - position).inSeconds.toDouble();
 
-    debugPrint(
-      '📊 Video progress: ${position.inSeconds}/${duration.inSeconds}s '
-      '(${(position.inMilliseconds / duration.inMilliseconds * 100).toStringAsFixed(1)}%)',
-    );
-
     if (remainingSeconds <= 3 && remainingSeconds >= 0) {
-      debugPrint(
-        '✅ Video nearly finished! '
-        '(${remainingSeconds.toStringAsFixed(1)}s remaining)',
-      );
       _hasMarkedComplete = true;
       _markCurrentLessonCompletedIfUnmarked();
     }
   }
 
+  String _youtubeVideoId(String source) {
+    final trimmed = source.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    return YoutubePlayer.convertUrlToId(trimmed) ?? '';
+  }
+
+  void _handleYoutubePlayerState() {
+    if (!mounted || _isDisposing || _hasMarkedComplete) {
+      return;
+    }
+
+    final controller = _youtubeController;
+    if (controller == null ||
+        controller.value.playerState != PlayerState.ended) {
+      return;
+    }
+
+    _hasMarkedComplete = true;
+    _markCurrentLessonCompletedIfUnmarked();
+  }
+
+  Widget _buildLessonPlayer(Lesson lesson) {
+    final youtubeVideoId = _youtubeVideoId(lesson.videoUrl);
+    if (youtubeVideoId.isNotEmpty) {
+      final controller = _youtubeController;
+      if (controller == null) {
+        return const ColoredBox(
+          color: Colors.black,
+          child: Center(child: CircularProgressIndicator()),
+        );
+      }
+      return YoutubePlayer(
+        controller: controller,
+        showVideoProgressIndicator: true,
+        progressIndicatorColor: const Color(AppColors.primary),
+      );
+    }
+
+    return BetterPlayer(controller: _controller);
+  }
+
   Future<void> _markCurrentLessonCompletedIfUnmarked() async {
-    debugPrint('🎯 _markCurrentLessonCompletedIfUnmarked called');
     final provider = context.read<CourseProvider>();
     final lessons = provider.lessonsByCourse(widget.courseId);
     if (lessons.isEmpty || _currentLessonIndex >= lessons.length) {
-      debugPrint(
-        '⚠️ Invalid lesson state: '
-        'lessons=${lessons.length}, index=$_currentLessonIndex',
-      );
       return;
     }
 
     if (_completedLessonIndexes.contains(_currentLessonIndex)) {
-      debugPrint('ℹ️ Lesson already marked as complete');
       return;
     }
 
     final lesson = lessons[_currentLessonIndex];
-    debugPrint('📝 Marking lesson ${lesson.title} as complete');
     await provider.markLessonCompleted(
       courseId: widget.courseId,
       lessonId: lesson.id,
     );
     if (!mounted) {
-      debugPrint('⚠️ Widget not mounted, returning');
       return;
     }
 
@@ -229,8 +311,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       lessons.length,
       _currentLessonIndex,
     );
-
-    debugPrint('✅ Progress updated: ${(progress * 100).toStringAsFixed(0)}%');
 
     setState(() {
       _completedLessonIndexes = completedIndexes;
@@ -250,7 +330,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
     if (progress >= 1 && !_completionDialogShown) {
       _completionDialogShown = true;
-      debugPrint('🎉 Course completed! Showing dialog...');
       _showCourseCompletedDialog();
     }
   }
@@ -558,32 +637,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
   }
 
-  void _openResources(Lesson lesson) {
-    Navigator.of(context).pushNamed(
-      AppRoutes.lessonResources,
-      arguments: LessonModuleArgs(
-        lesson: lesson,
-        courseId: widget.courseId,
-        courseTitle: widget.courseTitle,
-      ),
-    );
-  }
-
-  void _openNotes(Lesson lesson) {
-    Navigator.of(context).pushNamed(
-      AppRoutes.lessonNotes,
-      arguments: LessonModuleArgs(
-        lesson: lesson,
-        courseId: widget.courseId,
-        courseTitle: widget.courseTitle,
-      ),
-    );
-  }
-
-  void _toggleDownload(Lesson lesson) {
-    context.read<CourseProvider>().toggleLessonDownload(lesson.id);
-  }
-
   Lesson _resolvedCurrentLesson(List<Lesson> lessons) {
     if (lessons.isEmpty) {
       return widget.lesson;
@@ -602,10 +655,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     return lessons[clampedIndex];
   }
 
-  bool _usesUploadedNavigator(Course? course, List<Lesson> lessons) {
-    return course?.usesUploadedVideos == true &&
-        (course?.hasUploadedVideoUrls ?? false) &&
-        lessons.isNotEmpty;
+  bool _usesLessonNavigator(List<Lesson> lessons) {
+    return lessons.isNotEmpty;
   }
 
   @override
@@ -630,20 +681,18 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     final progress = lessons.isEmpty
         ? courseProvider.progressForCourse(widget.courseId)
         : _watchedProgressPercent;
-    final isDownloaded = courseProvider.isLessonDownloaded(currentLesson.id);
     final isUploadedCourse =
         resolvedCourse?.usesUploadedVideos == true &&
         (resolvedCourse?.hasUploadedVideoUrls ?? false);
 
-    if (_usesUploadedNavigator(resolvedCourse, lessons)) {
+    if (_usesLessonNavigator(lessons)) {
       return _buildUploadedNavigator(
-        course: resolvedCourse!,
+        course: resolvedCourse,
         lessons: lessons,
         currentLesson: currentLesson,
         currentLessonIndex: safeCurrentLessonIndex,
         completedLessons: completedLessons,
         progress: progress,
-        isDownloaded: isDownloaded,
       );
     }
 
@@ -674,7 +723,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       currentLessonIndex: safeCurrentLessonIndex,
       completedLessons: completedLessons,
       progress: progress,
-      isDownloaded: isDownloaded,
     );
   }
 
@@ -688,7 +736,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             borderRadius: BorderRadius.circular(24),
             child: AspectRatio(
               aspectRatio: 16 / 9,
-              child: BetterPlayer(controller: _controller),
+              child: _buildLessonPlayer(widget.lesson),
             ),
           ),
           const SizedBox(height: 18),
@@ -792,13 +840,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   Widget _buildUploadedNavigator({
-    required Course course,
+    required Course? course,
     required List<Lesson> lessons,
     required Lesson currentLesson,
     required int currentLessonIndex,
     required int completedLessons,
     required double progress,
-    required bool isDownloaded,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -869,7 +916,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     borderRadius: BorderRadius.circular(28),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
-                      child: BetterPlayer(controller: _controller),
+                      child: _buildLessonPlayer(currentLesson),
                     ),
                   ),
                 ),
@@ -934,7 +981,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        course.title,
+                        course?.title ?? widget.courseTitle,
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -1039,38 +1086,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: outlineColor),
-                  ),
-                  child: Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _CompactActionChip(
-                        icon: Icons.folder_open_rounded,
-                        label: 'Resources',
-                        onTap: () => _openResources(currentLesson),
-                      ),
-                      _CompactActionChip(
-                        icon: Icons.note_alt_outlined,
-                        label: 'Notes',
-                        onTap: () => _openNotes(currentLesson),
-                      ),
-                      _CompactActionChip(
-                        icon: isDownloaded
-                            ? Icons.download_done_rounded
-                            : Icons.download_rounded,
-                        label: isDownloaded ? 'Downloaded' : 'Download',
-                        onTap: () => _toggleDownload(currentLesson),
-                      ),
-                    ],
-                  ),
-                ),
                 const SizedBox(height: 18),
                 Text(
                   'Lesson Curriculum',
@@ -1129,7 +1144,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     required int currentLessonIndex,
     required int completedLessons,
     required double progress,
-    required bool isDownloaded,
   }) {
     final nextLesson = currentLessonIndex + 1 < lessons.length
         ? lessons[currentLessonIndex + 1]
@@ -1144,7 +1158,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             borderRadius: BorderRadius.circular(16),
             child: AspectRatio(
               aspectRatio: 16 / 9,
-              child: BetterPlayer(controller: _controller),
+              child: _buildLessonPlayer(currentLesson),
             ),
           ),
           const SizedBox(height: 16),
@@ -1226,25 +1240,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                       ? 'Completed'
                       : 'Mark Complete',
                 ),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _openResources(currentLesson),
-                icon: const Icon(Icons.folder_open_rounded),
-                label: const Text('Resources'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _openNotes(currentLesson),
-                icon: const Icon(Icons.note_alt_outlined),
-                label: const Text('Notes'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _toggleDownload(currentLesson),
-                icon: Icon(
-                  isDownloaded
-                      ? Icons.download_done_rounded
-                      : Icons.download_rounded,
-                ),
-                label: Text(isDownloaded ? 'Downloaded' : 'Download'),
               ),
             ],
           ),
@@ -1485,50 +1480,6 @@ class _ProgressStatCard extends StatelessWidget {
   }
 }
 
-class _CompactActionChip extends StatelessWidget {
-  const _CompactActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Material(
-      color: isDark ? const Color(0xFF15243A) : const Color(AppColors.bg),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 18, color: const Color(AppColors.primary)),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _UploadedLessonNavigatorTile extends StatelessWidget {
   const _UploadedLessonNavigatorTile({
     required this.index,
@@ -1741,13 +1692,16 @@ class _NavigatorBottomBar extends StatelessWidget {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: onPrevious,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
                 icon: const Icon(Icons.arrow_back_rounded),
-                label: const Text('Previous'),
+                label: const Text('Prev', maxLines: 1, softWrap: false),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              flex: 2,
+              flex: 1,
               child: FilledButton.icon(
                 onPressed: onMarkCompleted,
                 style: FilledButton.styleFrom(
@@ -1765,7 +1719,11 @@ class _NavigatorBottomBar extends StatelessWidget {
                       ? Icons.check_circle_rounded
                       : Icons.task_alt_rounded,
                 ),
-                label: Text(isCompleted ? 'Completed' : 'Mark Completed'),
+                label: Text(
+                  isCompleted ? 'Done' : 'Complete',
+                  maxLines: 1,
+                  softWrap: false,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -1783,7 +1741,7 @@ class _NavigatorBottomBar extends StatelessWidget {
                   ),
                 ),
                 icon: const Icon(Icons.arrow_forward_rounded),
-                label: const Text('Next'),
+                label: const Text('Next', maxLines: 1, softWrap: false),
               ),
             ),
           ],
