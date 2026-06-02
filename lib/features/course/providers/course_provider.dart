@@ -12,22 +12,39 @@ import 'package:learnhub/domain/entities/instructor.dart';
 import 'package:learnhub/domain/entities/lesson.dart';
 import 'package:learnhub/domain/entities/user_learning_state.dart';
 import 'package:learnhub/domain/repositories/course_repository.dart';
+import 'package:learnhub/features/course/providers/course_instructor_helper.dart';
+import 'package:learnhub/features/course/providers/course_lesson_loader.dart';
+import 'package:learnhub/features/course/providers/course_query.dart';
+import 'package:learnhub/features/course/providers/course_review_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum CourseSortOption { recommended, newest, rating, learners, priceLowToHigh }
+export 'package:learnhub/features/course/providers/course_query.dart'
+    show CourseSortOption;
 
 class CourseProvider extends ChangeNotifier {
   CourseProvider(this._courseRepository, {bool bindRealtime = true})
-    : _bindRealtime = bindRealtime {
+    : _bindRealtime = bindRealtime,
+      _lessonLoader = CourseLessonLoader(courseRepository: _courseRepository),
+      _reviewHandler = CourseReviewHandler(
+        courseRepository: _courseRepository,
+      ) {
     _restorePrefs();
+    // Initialize instructor helper after _courses is available
+    _instructorHelper = CourseInstructorHelper(
+      courseGetter: () => _courses,
+      ratingForInstructor: (name, {explicitRating}) =>
+          _computeInstructorRating(name, explicitRating: explicitRating),
+    );
   }
 
   final CourseRepository _courseRepository;
   final bool _bindRealtime;
 
-  final Map<String, List<Lesson>> _lessonsByCourse = <String, List<Lesson>>{};
-  final Map<String, List<CourseReview>> _reviewsByCourse =
-      <String, List<CourseReview>>{};
+  // Helpers
+  late final CourseLessonLoader _lessonLoader;
+  late final CourseReviewHandler _reviewHandler;
+  late CourseInstructorHelper _instructorHelper;
+
   final Map<String, Set<String>> _completedLessonsByCourse =
       <String, Set<String>>{};
   final Map<String, Set<int>> _completedLessonIndexesByCourse =
@@ -61,13 +78,10 @@ class CourseProvider extends ChangeNotifier {
   Future<void>? _loadInstructorsFuture;
   final Map<String, Future<void>> _enrolledCoursesFutures =
       <String, Future<void>>{};
-  final Map<String, Future<void>> _loadLessonsFutures =
-      <String, Future<void>>{};
-  final Map<String, Future<void>> _loadCourseReviewsFutures =
-      <String, Future<void>>{};
   bool _realtimeBound = false;
   Timer? _pendingRemoteSyncTimer;
 
+  // SharedPreferences keys
   static const _kEnrolled = 'course_enrolled_ids';
   static const _kWishlist = 'course_wishlist_ids';
   static const _kDownloaded = 'course_downloaded_lesson_ids';
@@ -118,16 +132,14 @@ class CourseProvider extends ChangeNotifier {
     final result = _courses
         .where((course) => _enrolledCourseIds.contains(course.id))
         .toList();
-    debugPrint(
-      '📚 enrolledCourses getter called: _courses=${_courses.length}, '
-      '_enrolledCourseIds=${_enrolledCourseIds.length}, result=${result.length}',
-    );
     if (result.isEmpty && _enrolledCourseIds.isNotEmpty) {
       debugPrint(
         '⚠️⚠️⚠️ PROBLEM: IDs registered but courses not in _courses! '
         'IDs: $_enrolledCourseIds',
       );
-      debugPrint('📊 Available course IDs: ${_courses.map((c) => c.id).toList()}');
+      debugPrint(
+        '📊 Available course IDs: ${_courses.map((c) => c.id).toList()}',
+      );
     }
     return result;
   }
@@ -176,24 +188,28 @@ class CourseProvider extends ChangeNotifier {
   }
 
   List<Course> coursesForInstructor(String instructorName) {
-    final name = instructorName.trim().toLowerCase();
-    if (name.isEmpty) {
-      return const <Course>[];
-    }
-    return _courses
-        .where((course) => course.instructor.trim().toLowerCase() == name)
-        .toList();
-  }
-
-  List<Instructor> instructorsForCategory(String category) {
-    return _filterInstructorsByCategory(instructors, category);
-  }
-
-  List<Instructor> platformInstructorsForCategory(String category) {
-    return _filterInstructorsByCategory(platformInstructors, category);
+    return _instructorHelper.coursesForInstructor(instructorName);
   }
 
   double ratingForInstructor(String instructorName, {double? explicitRating}) {
+    return _computeInstructorRating(
+      instructorName,
+      explicitRating: explicitRating,
+    );
+  }
+
+  List<Instructor> instructorsForCategory(String category) {
+    return _instructorHelper.filterByCategory(instructors, category);
+  }
+
+  List<Instructor> platformInstructorsForCategory(String category) {
+    return _instructorHelper.filterByCategory(platformInstructors, category);
+  }
+
+  double _computeInstructorRating(
+    String instructorName, {
+    double? explicitRating,
+  }) {
     final normalizedExplicitRating = explicitRating ?? 0;
     if (normalizedExplicitRating > 0) {
       return normalizedExplicitRating;
@@ -213,23 +229,7 @@ class CourseProvider extends ChangeNotifier {
   }
 
   String primaryCategoryForInstructor(String instructorName) {
-    final instructorCourses = coursesForInstructor(instructorName);
-    if (instructorCourses.isEmpty) {
-      return '';
-    }
-
-    final frequency = <String, int>{};
-    for (final course in instructorCourses) {
-      frequency.update(
-        course.category,
-        (count) => count + 1,
-        ifAbsent: () => 1,
-      );
-    }
-
-    final sorted = frequency.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return sorted.first.key;
+    return _instructorHelper.primaryCategoryForInstructor(instructorName);
   }
 
   bool isEnrolled(String courseId) => _enrolledCourseIds.contains(courseId);
@@ -249,10 +249,10 @@ class CourseProvider extends ChangeNotifier {
       _watchedPercentByCourse[courseId] ?? 0;
 
   List<Lesson> lessonsByCourse(String courseId) =>
-      _lessonsByCourse[courseId] ?? <Lesson>[];
+      _lessonLoader.getLessonsByCourse(courseId);
 
   List<CourseReview> reviewsByCourse(String courseId) =>
-      _reviewsByCourse[courseId] ?? <CourseReview>[];
+      _reviewHandler.getReviewsByCourse(courseId);
 
   List<String> discussionByCourse(String courseId) =>
       _courseDiscussions[courseId] ?? <String>[];
@@ -667,62 +667,32 @@ class CourseProvider extends ChangeNotifier {
     bool force = false,
     bool showLoading = true,
   }) async {
-    if (!force && _lessonsByCourse.containsKey(courseId)) {
-      return;
-    }
     final normalizedCourseId = courseId.trim();
     if (normalizedCourseId.isEmpty) {
       return;
     }
 
-    final inFlight = _loadLessonsFutures[normalizedCourseId];
-    if (inFlight != null) {
-      return inFlight;
-    }
-
-    final future = _loadLessonsInternal(
-      normalizedCourseId,
+    await _lessonLoader.loadLessons(
+      courseId: normalizedCourseId,
       force: force,
-      showLoading: showLoading,
+      onLoadingChange: (loading) {
+        if (showLoading) {
+          _setLoading(loading);
+        }
+      },
+      onErrorChange: (error) {
+        _errorMessage = error;
+      },
     );
-    _loadLessonsFutures[normalizedCourseId] = future;
-    return future.whenComplete(() {
-      if (identical(_loadLessonsFutures[normalizedCourseId], future)) {
-        _loadLessonsFutures.remove(normalizedCourseId);
-      }
-    });
-  }
 
-  Future<void> _loadLessonsInternal(
-    String courseId, {
-    required bool force,
-    required bool showLoading,
-  }) async {
-    if (!force && _lessonsByCourse.containsKey(courseId)) {
-      return;
+    // Reconcile progress after loading
+    final lessons = _lessonLoader.getLessonsByCourse(normalizedCourseId);
+    if (lessons.isNotEmpty) {
+      _reconcileCourseProgressWithLessons(normalizedCourseId, lessons);
     }
-    if (showLoading) {
-      _setLoading(true);
-    }
-    _errorMessage = null;
 
-    try {
-      final lessons = await _courseRepository.getLessonsByCourse(courseId);
-      final sorted = List<Lesson>.from(lessons)
-        ..sort((a, b) => a.order.compareTo(b.order));
-      _lessonsByCourse[courseId] = sorted;
-      _reconcileCourseProgressWithLessons(courseId, sorted);
-    } catch (error) {
-      _errorMessage = AppErrorMapper.data(
-        error,
-        fallback: 'Could not load lessons.',
-      );
-    } finally {
-      if (showLoading) {
-        _setLoading(false);
-      } else {
-        notifyListeners();
-      }
+    if (!showLoading) {
+      notifyListeners();
     }
   }
 
@@ -786,59 +756,26 @@ class CourseProvider extends ChangeNotifier {
     bool force = false,
     bool showLoading = true,
   }) async {
-    if (!force && _reviewsByCourse.containsKey(courseId)) {
-      return;
-    }
     final normalizedCourseId = courseId.trim();
     if (normalizedCourseId.isEmpty) {
       return;
     }
 
-    final inFlight = _loadCourseReviewsFutures[normalizedCourseId];
-    if (inFlight != null) {
-      return inFlight;
-    }
-
-    final future = _loadCourseReviewsInternal(
-      normalizedCourseId,
+    await _reviewHandler.loadReviews(
+      courseId: normalizedCourseId,
       force: force,
-      showLoading: showLoading,
+      onLoadingChange: (loading) {
+        if (showLoading) {
+          _setLoading(loading);
+        }
+      },
+      onErrorChange: (error) {
+        _errorMessage = error;
+      },
     );
-    _loadCourseReviewsFutures[normalizedCourseId] = future;
-    return future.whenComplete(() {
-      if (identical(_loadCourseReviewsFutures[normalizedCourseId], future)) {
-        _loadCourseReviewsFutures.remove(normalizedCourseId);
-      }
-    });
-  }
 
-  Future<void> _loadCourseReviewsInternal(
-    String courseId, {
-    required bool force,
-    required bool showLoading,
-  }) async {
-    if (!force && _reviewsByCourse.containsKey(courseId)) {
-      return;
-    }
-    if (showLoading) {
-      _setLoading(true);
-    }
-    _errorMessage = null;
-
-    try {
-      final reviews = await _courseRepository.getCourseReviews(courseId);
-      _reviewsByCourse[courseId] = reviews;
-    } catch (error) {
-      _errorMessage = AppErrorMapper.data(
-        error,
-        fallback: 'Could not load reviews.',
-      );
-    } finally {
-      if (showLoading) {
-        _setLoading(false);
-      } else {
-        notifyListeners();
-      }
+    if (!showLoading) {
+      notifyListeners();
     }
   }
 
@@ -848,32 +785,17 @@ class CourseProvider extends ChangeNotifier {
     required String comment,
     required double rating,
   }) async {
-    final review = CourseReview(
-      id: 'review_${DateTime.now().millisecondsSinceEpoch}',
+    await _reviewHandler.addReview(
       courseId: courseId,
       userName: userName,
       comment: comment,
       rating: rating,
-      createdAt: DateTime.now(),
+      onLoadingChange: _setLoading,
+      onErrorChange: (error) {
+        _errorMessage = error;
+      },
     );
-
-    _setLoading(true);
-    _errorMessage = null;
-
-    try {
-      await _courseRepository.addCourseReview(review);
-      final current = List<CourseReview>.from(
-        _reviewsByCourse[courseId] ?? <CourseReview>[],
-      );
-      _reviewsByCourse[courseId] = <CourseReview>[review, ...current];
-    } catch (error) {
-      _errorMessage = AppErrorMapper.data(
-        error,
-        fallback: 'Could not submit your review.',
-      );
-    } finally {
-      _setLoading(false);
-    }
+    notifyListeners();
   }
 
   Future<void> enrollCourse({
@@ -989,15 +911,10 @@ class CourseProvider extends ChangeNotifier {
     _errorMessage = null;
 
     try {
-      debugPrint('🔄 Loading enrolled courses for user: $userId');
       final enrolled = await _courseRepository.getEnrolledCourses(userId);
-      debugPrint('✅ Got ${enrolled.length} enrolled courses from repository');
       final remoteEnrolled = enrolled.map((course) => course.id).toSet();
-      debugPrint('📝 Remote enrolled IDs: $remoteEnrolled');
-      debugPrint('📊 All courses in memory: ${_courses.length}');
 
       _enrolledCourseIds = <String>{..._enrolledCourseIds, ...remoteEnrolled};
-      debugPrint('✨ Updated _enrolledCourseIds: $_enrolledCourseIds');
 
       _progressByCourse.removeWhere((courseId, _) {
         return !_enrolledCourseIds.contains(courseId);
@@ -1009,12 +926,11 @@ class CourseProvider extends ChangeNotifier {
         _progressByCourse.putIfAbsent(courseId, () => 0.0);
         _watchedPercentByCourse.putIfAbsent(courseId, () => 0.0);
         if ((_lastOpenedAtByCourse[courseId] ?? 0) > 0 &&
-            !_lessonsByCourse.containsKey(courseId)) {
+            _lessonLoader.getLessonsByCourse(courseId).isEmpty) {
           unawaited(loadLessons(courseId, showLoading: false));
         }
       }
       _persistLocalState();
-      debugPrint('🎯 Enrolled courses loaded successfully');
     } catch (error) {
       debugPrint('❌ Error loading enrolled courses: $error');
       _errorMessage = AppErrorMapper.data(
@@ -1026,7 +942,6 @@ class CourseProvider extends ChangeNotifier {
         _setLoading(false);
       } else {
         notifyListeners();
-        debugPrint('🔔 notifyListeners() called');
       }
     }
   }
@@ -1035,7 +950,7 @@ class CourseProvider extends ChangeNotifier {
     required String courseId,
     required String lessonId,
   }) async {
-    if (!_lessonsByCourse.containsKey(courseId)) {
+    if (_lessonLoader.getLessonsByCourse(courseId).isEmpty) {
       await loadLessons(courseId);
     }
 
@@ -1047,7 +962,7 @@ class CourseProvider extends ChangeNotifier {
     _lastLessonByCourse[courseId] = lessonId;
     _lastOpenedAtByCourse[courseId] = DateTime.now().millisecondsSinceEpoch;
 
-    final lessons = _lessonsByCourse[courseId] ?? <Lesson>[];
+    final lessons = _lessonLoader.getLessonsByCourse(courseId);
     final lessonIndex = lessons.indexWhere((lesson) => lesson.id == lessonId);
     if (lessonIndex >= 0) {
       _lastWatchedLessonIndexByCourse[courseId] = lessonIndex;
@@ -1070,19 +985,17 @@ class CourseProvider extends ChangeNotifier {
 
       // Check if course is 100% complete
       if (progress >= 1.0) {
-        debugPrint('🎓 Course $courseId completed 100%! Updating certificate...');
+        debugPrint(
+          '🎓 Course $courseId completed 100%! Updating certificate...',
+        );
         // Update certificate status
         try {
           // Get the course to find the title
           final course = _courses.firstWhere(
             (c) => c.id == courseId,
-            orElse: () => Course(
-              id: courseId,
-              title: 'Course',
-              category: '',
-            ),
+            orElse: () => Course(id: courseId, title: 'Course', category: ''),
           );
-          
+
           // Update all matching certificates for this course
           final userId = _lastLoadedUserId;
           if (userId != null) {
@@ -1144,10 +1057,13 @@ class CourseProvider extends ChangeNotifier {
   }
 
   List<Lesson> get downloadedLessons {
-    final allLessons = _lessonsByCourse.values
-        .expand((lessons) => lessons)
-        .toList();
-    return allLessons
+    // Collect all lessons from all courses
+    final allCourseLessons = <Lesson>[];
+    for (final courseId in _lessonLoader.getCourseIds()) {
+      allCourseLessons.addAll(_lessonLoader.getLessonsByCourse(courseId));
+    }
+
+    return allCourseLessons
         .where((lesson) => _downloadedLessonIds.contains(lesson.id))
         .toList();
   }
@@ -1200,7 +1116,7 @@ class CourseProvider extends ChangeNotifier {
             nextCompletedIndexes;
       }
 
-      final lessons = _lessonsByCourse[normalizedCourseId] ?? <Lesson>[];
+      final lessons = _lessonLoader.getLessonsByCourse(normalizedCourseId);
       if (lessons.isNotEmpty) {
         final completedLessonIds = <String>{};
         for (final index in nextCompletedIndexes) {
@@ -1228,14 +1144,15 @@ class CourseProvider extends ChangeNotifier {
         watchedPercent?.clamp(0, 1).toDouble() ??
         _estimatedWatchedPercent(
           normalizedCourseId,
-          totalLessons:
-              (_lessonsByCourse[normalizedCourseId] ?? <Lesson>[]).length,
+          totalLessons: _lessonLoader
+              .getLessonsByCourse(normalizedCourseId)
+              .length,
         );
     final completionFloor = _progressByCourse[normalizedCourseId] ?? 0;
     final previousWatchedPercent =
         _watchedPercentByCourse[normalizedCourseId] ?? 0;
-    final resolvedWatchedPercent = incomingWatchedPercent >
-            previousWatchedPercent
+    final resolvedWatchedPercent =
+        incomingWatchedPercent > previousWatchedPercent
         ? incomingWatchedPercent
         : previousWatchedPercent;
     final boundedWatchedPercent = resolvedWatchedPercent < completionFloor
@@ -1261,7 +1178,8 @@ class CourseProvider extends ChangeNotifier {
     if (courseId.trim().isEmpty || lessonId.trim().isEmpty) {
       return;
     }
-    final lessonIndex = (_lessonsByCourse[courseId] ?? const <Lesson>[])
+    final lessonIndex = _lessonLoader
+        .getLessonsByCourse(courseId)
         .indexWhere((lesson) => lesson.id == lessonId);
     saveCoursePlaybackState(
       courseId: courseId,
@@ -1276,40 +1194,17 @@ class CourseProvider extends ChangeNotifier {
     String? level,
     CourseSortOption sort = CourseSortOption.recommended,
     bool excludeEnrolled = false,
-  }) {
-    final normalizedQuery = query.trim().toLowerCase();
-    final normalizedCategory = (category ?? '').trim().toLowerCase();
-    final normalizedLevel = (level ?? '').trim().toLowerCase();
-
-    final results = _courses
-        .where((course) {
-          if (!course.isPublished) {
-            return false;
-          }
-          if (excludeEnrolled && _enrolledCourseIds.contains(course.id)) {
-            return false;
-          }
-          if (normalizedCategory.isNotEmpty &&
-              normalizedCategory != 'all' &&
-              course.category.trim().toLowerCase() != normalizedCategory) {
-            return false;
-          }
-          if (normalizedLevel.isNotEmpty &&
-              normalizedLevel != 'all levels' &&
-              course.level.trim().toLowerCase() != normalizedLevel) {
-            return false;
-          }
-          if (normalizedQuery.isEmpty) {
-            return true;
-          }
-          return _courseMatchesQuery(course, normalizedQuery);
-        })
-        .toList(growable: false);
-
-    final sorted = List<Course>.from(results);
-    sorted.sort((a, b) => _compareCourses(a, b, sort, normalizedQuery));
-    return sorted;
-  }
+  }) => CourseQuery.filterAndSort(
+    courses: _courses,
+    enrolledCourseIds: _enrolledCourseIds,
+    preferenceSources: <Course>[...enrolledCourses, ...wishlistCourses],
+    wishlistCourseIds: _wishlistCourseIds,
+    query: query,
+    category: category,
+    level: level,
+    sort: sort,
+    excludeEnrolled: excludeEnrolled,
+  );
 
   void addDiscussionMessage({
     required String courseId,
@@ -1466,7 +1361,7 @@ class CourseProvider extends ChangeNotifier {
     );
     final resolvedTotalLessons =
         totalLessons ??
-        (_lessonsByCourse[sanitizedCourseId] ?? <Lesson>[]).length;
+        _lessonLoader.getLessonsByCourse(sanitizedCourseId).length;
     if (resolvedTotalLessons <= 0) {
       return storedProgress.toDouble();
     }
@@ -1492,7 +1387,7 @@ class CourseProvider extends ChangeNotifier {
 
     final resolvedTotalLessons =
         totalLessons ??
-        (_lessonsByCourse[sanitizedCourseId] ?? <Lesson>[]).length;
+        _lessonLoader.getLessonsByCourse(sanitizedCourseId).length;
     final completionProgress = _completionProgressForCourse(
       sanitizedCourseId,
       totalLessons: resolvedTotalLessons,
@@ -1528,10 +1423,10 @@ class CourseProvider extends ChangeNotifier {
       ..._watchedPercentByCourse.keys,
       ..._completedLessonsByCourse.keys,
       ..._completedLessonIndexesByCourse.keys,
-      ..._lessonsByCourse.keys,
+      ..._lessonLoader.getCourseIds(),
     };
     for (final courseId in courseIds) {
-      final totalLessons = (_lessonsByCourse[courseId] ?? <Lesson>[]).length;
+      final totalLessons = _lessonLoader.getLessonsByCourse(courseId).length;
       final completionProgress = _completionProgressForCourse(
         courseId,
         totalLessons: totalLessons,
@@ -1613,119 +1508,6 @@ class CourseProvider extends ChangeNotifier {
     _pendingRemoteSyncTimer = Timer(const Duration(milliseconds: 650), () {
       unawaited(_syncRemoteState(activeUserId));
     });
-  }
-
-  bool _courseMatchesQuery(Course course, String query) {
-    final haystack = <String>[
-      course.title,
-      course.category,
-      course.instructor,
-      course.description,
-      course.level,
-      ...course.tags,
-      ...course.outcomes,
-    ].join(' ').toLowerCase();
-    return haystack.contains(query);
-  }
-
-  int _compareCourses(
-    Course a,
-    Course b,
-    CourseSortOption sort,
-    String normalizedQuery,
-  ) {
-    switch (sort) {
-      case CourseSortOption.newest:
-        return _compareDateThenTitle(a, b);
-      case CourseSortOption.rating:
-        return b.rating.compareTo(a.rating);
-      case CourseSortOption.learners:
-        return b.studentCount.compareTo(a.studentCount);
-      case CourseSortOption.priceLowToHigh:
-        return a.price.compareTo(b.price);
-      case CourseSortOption.recommended:
-        final scoreA = _recommendationScore(a, normalizedQuery);
-        final scoreB = _recommendationScore(b, normalizedQuery);
-        final scoreCmp = scoreB.compareTo(scoreA);
-        if (scoreCmp != 0) {
-          return scoreCmp;
-        }
-        return _compareDateThenTitle(a, b);
-    }
-  }
-
-  int _compareDateThenTitle(Course a, Course b) {
-    final aDate =
-        a.lastUpdatedAt ??
-        a.createdAt ??
-        DateTime.fromMillisecondsSinceEpoch(0);
-    final bDate =
-        b.lastUpdatedAt ??
-        b.createdAt ??
-        DateTime.fromMillisecondsSinceEpoch(0);
-    final dateCmp = bDate.compareTo(aDate);
-    if (dateCmp != 0) {
-      return dateCmp;
-    }
-    return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-  }
-
-  double _recommendationScore(Course course, String normalizedQuery) {
-    final preferredCategories = <String, int>{};
-    final preferredTags = <String, int>{};
-
-    for (final source in [...enrolledCourses, ...wishlistCourses]) {
-      preferredCategories.update(
-        source.category.trim().toLowerCase(),
-        (value) => value + 1,
-        ifAbsent: () => 1,
-      );
-      for (final tag in source.tags) {
-        preferredTags.update(
-          tag.trim().toLowerCase(),
-          (value) => value + 1,
-          ifAbsent: () => 1,
-        );
-      }
-    }
-
-    var score = 0.0;
-    score += course.rating * 14;
-    score += (course.studentCount / 75).clamp(0, 26);
-
-    final categoryKey = course.category.trim().toLowerCase();
-    score += (preferredCategories[categoryKey] ?? 0) * 18;
-
-    for (final tag in course.tags) {
-      score += (preferredTags[tag.trim().toLowerCase()] ?? 0) * 6;
-    }
-
-    if (course.isAdminCourse) {
-      score += 4;
-    }
-
-    if (_wishlistCourseIds.contains(course.id)) {
-      score += 8;
-    }
-
-    if (normalizedQuery.isNotEmpty) {
-      if (course.title.toLowerCase().contains(normalizedQuery)) {
-        score += 32;
-      }
-      if (course.category.toLowerCase().contains(normalizedQuery)) {
-        score += 14;
-      }
-      if (course.description.toLowerCase().contains(normalizedQuery)) {
-        score += 10;
-      }
-      if (course.tags.any(
-        (tag) => tag.toLowerCase().contains(normalizedQuery),
-      )) {
-        score += 10;
-      }
-    }
-
-    return score;
   }
 
   void _setLoading(bool value) {
@@ -1832,28 +1614,6 @@ class CourseProvider extends ChangeNotifier {
     return merged;
   }
 
-  List<Instructor> _filterInstructorsByCategory(
-    List<Instructor> source,
-    String category,
-  ) {
-    final normalized = category.trim().toLowerCase();
-    if (normalized.isEmpty || normalized == 'all') {
-      return List<Instructor>.from(source);
-    }
-
-    final instructorNames = _courses
-        .where((course) => course.category.trim().toLowerCase() == normalized)
-        .map((course) => course.instructor.trim().toLowerCase())
-        .toSet();
-
-    return source
-        .where(
-          (instructor) =>
-              instructorNames.contains(instructor.name.trim().toLowerCase()),
-        )
-        .toList();
-  }
-
   List<Instructor> _hydrateInstructors(List<Instructor> source) {
     return source.map(_hydrateInstructor).toList(growable: false);
   }
@@ -1883,7 +1643,7 @@ class CourseProvider extends ChangeNotifier {
       title: title,
       bio: bio,
       avatarUrl: instructor.avatarUrl,
-      rating: ratingForInstructor(
+      rating: _computeInstructorRating(
         instructor.name,
         explicitRating: instructor.rating,
       ),

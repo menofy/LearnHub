@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:learnhub/core/navigation/app_routes.dart';
 import '../../../core/navigation/route_args.dart';
 import 'package:learnhub/core/theme/app_colors.dart';
+import '../../../domain/entities/lesson.dart';
 
 class YoutubePlaylistScreen extends StatefulWidget {
   const YoutubePlaylistScreen({
@@ -154,6 +155,27 @@ class _YoutubePlaylistScreenState extends State<YoutubePlaylistScreen> {
                     watchedPercent: ((index + 0.35) / provider.videos.length)
                         .clamp(0, 0.98),
                   );
+                  Navigator.of(context).pushNamed(
+                    AppRoutes.videoPlayer,
+                    arguments: VideoPlayerArgs(
+                      lesson: Lesson(
+                        id: '${normalizedCourseId}_${video.videoId}',
+                        courseId: normalizedCourseId,
+                        title: video.title,
+                        videoUrl:
+                            'https://www.youtube.com/watch?v=${video.videoId}',
+                        duration: video.duration.isNotEmpty
+                            ? video.duration
+                            : 'YouTube lesson',
+                        order: index + 1,
+                        sectionTitle: '',
+                        isPreview: index < 2,
+                      ),
+                      courseId: normalizedCourseId,
+                      courseTitle: widget.courseTitle,
+                    ),
+                  );
+                  return;
                 }
                 Navigator.of(context).pushNamed(
                   AppRoutes.youtubeFullscreen,

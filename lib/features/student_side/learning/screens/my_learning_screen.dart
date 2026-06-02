@@ -34,17 +34,10 @@ class _MyLearningScreenState extends State<MyLearningScreen> {
       final courseProvider = context.read<CourseProvider>();
       final userId = context.read<AuthProvider>().currentUser?.id;
 
-      debugPrint('🎓 MyLearningScreen initState: userId=$userId');
       if (courseProvider.courses.isEmpty) {
-        debugPrint('📚 Loading courses (empty)...');
         courseProvider.loadCourses();
-      } else {
-        debugPrint(
-          '📚 Courses already loaded: ${courseProvider.courses.length}',
-        );
       }
       if (userId != null) {
-        debugPrint('👤 Loading enrolled courses for user...');
         courseProvider.loadEnrolledCourses(userId, showLoading: false);
       }
     });
@@ -140,21 +133,10 @@ class _MyLearningScreenState extends State<MyLearningScreen> {
     final enrolled = provider.enrolledCourses;
     _syncCertificatesIfNeeded(completed);
 
-    debugPrint('🎯 MyLearningScreen build:');
-    debugPrint(
-      '   completed=${completed.length}, ongoing=${ongoing.length}, '
-      'enrolled=${enrolled.length}',
-    );
-    debugPrint('   _completedTab=$_completedTab');
-
     final visible = _completedTab
         ? completed
         : (ongoing.isEmpty ? enrolled : ongoing);
 
-    debugPrint(
-      '   visible=${visible.length} '
-      '(showing ${_completedTab ? 'completed' : 'enrolled/ongoing'})',
-    );
     final primaryContinueCourse = ongoing.isEmpty ? null : ongoing.first;
 
     final content = SafeArea(
